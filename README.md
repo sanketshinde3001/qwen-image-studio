@@ -8,6 +8,7 @@
 [![Model][model-shield]][model-url]
 [![MIT License][license-shield]][license-url]
 [![Stars][stars-shield]][stars-url]
+[![Views][views-shield]][views-url]
 
 <!-- PROJECT LOGO -->
 <br />
@@ -77,6 +78,7 @@
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
+    <li><a href="#star-history">Star History</a></li>
   </ol>
 </details>
 
@@ -464,6 +466,20 @@ Questions, bugs and benchmark results: [open an issue](https://github.com/sanket
 
 
 
+<!-- STAR HISTORY -->
+## Star History
+
+<a href="https://star-history.com/#sanketshinde3001/qwen-image-studio&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=sanketshinde3001/qwen-image-studio&type=Date&theme=dark" />
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=sanketshinde3001/qwen-image-studio&type=Date" />
+  </picture>
+</a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
 <!-- MARKDOWN LINKS & IMAGES -->
 [macos-shield]: https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white
 [macos-url]: https://support.apple.com/en-us/116943
@@ -489,3 +505,5 @@ Questions, bugs and benchmark results: [open an issue](https://github.com/sanket
 [license-url]: LICENSE
 [stars-shield]: https://img.shields.io/github/stars/sanketshinde3001/qwen-image-studio?style=for-the-badge
 [stars-url]: https://github.com/sanketshinde3001/qwen-image-studio/stargazers
+[views-shield]: https://hits.sh/github.com/sanketshinde3001/qwen-image-studio.svg?style=for-the-badge&label=views&color=f0a14a
+[views-url]: https://hits.sh/github.com/sanketshinde3001/qwen-image-studio/
