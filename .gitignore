@@ -1,0 +1,15 @@
+# Large or machine-specific files. Fetch them with ./download.sh
+bin/
+models/
+
+# Your images and run data
+inputs/
+outputs/
+logs/
+studio/tmp/
+studio/calibration.json
+studio/settings.json
+studio/library.json
+
+.DS_Store
+__pycache__/

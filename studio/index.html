@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen-Image Studio</title>
+<style>
+:root {
+  --bg: #0f1012; --panel: #17181b; --panel-2: #1e2024; --line: #2a2d32; --line-2: #363a40;
+  --text: #e9e9ea; --muted: #9a9ca3; --faint: #6b6e75;
+  --accent: #f0a14a; --accent-ink: #1a1206; --accent-soft: rgba(240,161,74,.14);
+  --danger: #ef6b6b; --ok: #6fcf97;
+  --radius: 10px; --radius-sm: 7px;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f3f1; --panel: #ffffff; --panel-2: #f7f6f4; --line: #e4e2de; --line-2: #d6d3cd;
+    --text: #1b1b1d; --muted: #66686e; --faint: #9b9da3;
+    --accent: #c86f12; --accent-ink: #fff; --accent-soft: rgba(200,111,18,.10);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.app { display: grid; grid-template-columns: 390px 1fr; height: 100vh; }
+
+/* ---------- sidebar ---------- */
+aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.brand { padding: 16px 18px 12px; display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--line); }
+.brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+.brand .chip { font: 11px var(--mono); color: var(--muted); }
+.controls { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 16px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; padding: 6px 8px; border-radius: 5px; color: var(--muted); font-weight: 550; font-size: 13px; }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.tabs button { padding: 8px; font-size: 14px; }
+.field { display: flex; flex-direction: column; gap: 7px; }
+.label { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.label .val { font: 12px var(--mono); color: var(--text); text-transform: none; letter-spacing: 0; }
+textarea, input[type=text], input[type=number], select {
+  width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; outline: none;
+}
+textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 92px; }
+textarea.small { min-height: 44px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 3px 9px; border-radius: 999px; font-size: 12px; }
+.chips button:hover { color: var(--text); border-color: var(--line-2); }
+.aspects { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.aspects button { border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--radius-sm); padding: 7px 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; }
+.aspects button .shape { border: 1.5px solid currentColor; border-radius: 2px; }
+.aspects button.on { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.seed { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
+.iconbtn { border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--radius-sm); padding: 0 10px; height: 36px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.iconbtn:hover { color: var(--text); }
+.iconbtn.on { color: var(--accent); border-color: var(--accent); }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.toggle small { display: block; color: var(--faint); font-size: 12px; }
+.switch { position: relative; width: 34px; height: 20px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line-2); border-radius: 20px; transition: .15s; }
+.switch span::after { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(14px); }
+details { border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px; }
+details summary { cursor: pointer; padding: 10px 0; font-size: 13px; font-weight: 600; color: var(--muted); list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: "▸ "; }
+details[open] summary::before { content: "▾ "; }
+details .inner { display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
+.drop { border: 1.5px dashed var(--line-2); border-radius: var(--radius); padding: 16px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; transition: .15s; }
+.drop.over, .drop:hover { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ref { position: relative; aspect-ratio: 1; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--line); background: var(--panel-2); }
+.ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ref button { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; line-height: 1; }
+.ref .n { position: absolute; left: 5px; bottom: 4px; font: 11px var(--mono); color: #fff; background: rgba(0,0,0,.55); padding: 0 5px; border-radius: 4px; }
+.foot { border-top: 1px solid var(--line); padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); }
+.est { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+.est b { color: var(--text); font-weight: 600; }
+.warn { font-size: 12px; color: var(--accent); }
+.go { width: 100%; border: 0; border-radius: var(--radius); padding: 12px; background: var(--accent); color: var(--accent-ink); font-weight: 650; font-size: 15px; display: flex; justify-content: center; gap: 10px; align-items: center; }
+.go:hover { filter: brightness(1.06); }
+.go kbd { font: 11px var(--mono); opacity: .7; }
+.err { color: var(--danger); font-size: 12.5px; }
+
+/* ---------- main ---------- */
+main { min-width: 0; overflow-y: auto; padding: 18px 22px 40px; display: flex; flex-direction: column; gap: 22px; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; }
+.canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-height: 420px; height: min(68vh, 760px); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+.canvas img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.canvas .empty { color: var(--faint); text-align: center; padding: 20px; }
+.canvas .empty h2 { color: var(--muted); font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+.canvas .badge { position: absolute; left: 12px; top: 12px; font: 11.5px var(--mono); background: rgba(0,0,0,.6); color: #fff; padding: 3px 8px; border-radius: 6px; }
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; }
+.card h3 button { border: 0; background: none; color: var(--faint); font-size: 12px; text-transform: none; letter-spacing: 0; padding: 0; }
+.bar { height: 6px; background: var(--panel-2); border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .6s; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.stats b { display: block; color: var(--text); font: 600 14px var(--mono); }
+.stagetxt { font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+.stagetxt span:last-child { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.linkbtn { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12.5px; }
+.linkbtn:hover { color: var(--text); border-color: var(--line-2); }
+.linkbtn.danger:hover { color: var(--danger); border-color: var(--danger); }
+.queue { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.qitem { display: grid; grid-template-columns: 8px 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+.qitem:last-child { border-bottom: 0; }
+.qitem .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.qitem.running .dot { background: var(--accent); animation: pulse 1.2s infinite; }
+.qitem.done .dot { background: var(--ok); }
+.qitem.error .dot { background: var(--danger); }
+.qitem .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qitem .p small { color: var(--faint); font-family: var(--mono); margin-right: 6px; }
+.qitem button { border: 0; background: none; color: var(--faint); font-size: 12px; padding: 0 4px; }
+.qitem button:hover { color: var(--danger); }
+@keyframes pulse { 50% { opacity: .35; } }
+.gal-head { display: flex; justify-content: space-between; align-items: baseline; }
+.gal-head h2 { font-size: 14px; margin: 0; font-weight: 600; }
+.gal-head span { color: var(--faint); font-size: 12px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.tile { position: relative; aspect-ratio: 1; border-radius: var(--radius); overflow: hidden; background: var(--panel); border: 1px solid var(--line); cursor: zoom-in; padding: 0; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s; }
+.tile:hover img { transform: scale(1.03); }
+.tile .tag { position: absolute; left: 7px; top: 7px; font: 10.5px var(--mono); background: rgba(0,0,0,.6); color: #fff; padding: 1px 6px; border-radius: 4px; }
+.tile .acts { position: absolute; inset: auto 0 0 0; padding: 8px; display: flex; gap: 6px; opacity: 0; transition: .15s; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.tile:hover .acts { opacity: 1; }
+.tile .acts span { font-size: 11.5px; color: #fff; background: rgba(255,255,255,.18); padding: 3px 8px; border-radius: 5px; backdrop-filter: blur(6px); }
+.tile .acts span:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* ---------- lightbox ---------- */
+.lb { position: fixed; inset: 0; background: rgba(6,6,8,.9); display: none; grid-template-columns: 1fr 340px; z-index: 50; }
+.lb.open { display: grid; }
+.lb .view { position: relative; display: flex; align-items: center; justify-content: center; padding: 24px; min-width: 0; }
+.cmp { position: relative; max-width: 100%; max-height: calc(100vh - 48px); user-select: none; }
+.cmp img { display: block; max-width: 100%; max-height: calc(100vh - 48px); }
+.cmp .before { position: absolute; inset: 0; overflow: hidden; }
+.cmp .before img { width: 100%; height: 100%; object-fit: cover; }
+.cmp .handle { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 8px rgba(0,0,0,.5); cursor: ew-resize; }
+.cmp .handle::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; color: #111; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; }
+.cmp .lbl { position: absolute; top: 10px; font: 11px var(--mono); background: rgba(0,0,0,.6); color: #fff; padding: 2px 7px; border-radius: 4px; }
+.lb .nav { position: absolute; top: 50%; transform: translateY(-50%); border: 0; background: rgba(255,255,255,.1); color: #fff; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; }
+.lb .nav:hover { background: rgba(255,255,255,.2); }
+.lb .info { background: var(--panel); border-left: 1px solid var(--line); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.lb .info .close { align-self: flex-end; }
+.lb .prompt { font-size: 13.5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px; white-space: pre-wrap; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btns .linkbtn { padding: 8px; }
+.btns .primary { grid-column: span 2; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; z-index: 60; }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+.hidden { display: none !important; }
+.privbtn { margin-left: auto; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; }
+.privbtn.on { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+.privnote { border: 1px solid #8b5cf6; background: rgba(139,92,246,.1); border-radius: var(--radius); padding: 9px 11px; font-size: 12.5px; color: var(--text); }
+body.private .go { background: #8b5cf6; color: #fff; }
+.locked { opacity: .45; pointer-events: none; }
+.lockednote { font-size: 12px; color: var(--accent); }
+.privtray { border: 1px dashed #8b5cf6; border-radius: 14px; padding: 14px; }
+.privtray .gal-head h2::before { content: "🔒 "; }
+.tile .acts a { font-size: 11.5px; color: #fff; background: rgba(255,255,255,.18); padding: 3px 8px; border-radius: 5px; text-decoration: none; }
+.tile .acts a:hover { background: var(--accent); color: var(--accent-ink); }
+
+
+/* ---------- additions: refs tools, popovers, modals, gallery tools ---------- */
+.ref .tools { position: absolute; left: 4px; top: 4px; display: flex; gap: 4px; }
+.ref .tools button { position: static; width: auto; height: 22px; border-radius: 6px; padding: 0 7px; font-size: 11px; }
+.ref .badge2 { position: absolute; right: 5px; bottom: 4px; font: 10.5px var(--mono); color: #fff; background: #8b5cf6; padding: 0 5px; border-radius: 4px; }
+.labelbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
+.labelbtns button { border: 0; background: none; color: var(--faint); font-size: 13px; padding: 0 3px; }
+.labelbtns button:hover, .labelbtns button.on { color: var(--accent); }
+.assist { display: flex; gap: 6px; }
+.assist button { flex: 1; }
+.chips.ai button { border-color: var(--accent); color: var(--text); }
+.pop { position: fixed; z-index: 70; width: 340px; max-height: 60vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 10px 40px rgba(0,0,0,.45); padding: 8px; }
+.pop h4 { margin: 8px 6px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.pop .item { display: flex; gap: 6px; align-items: flex-start; padding: 7px 8px; border-radius: 6px; font-size: 12.5px; cursor: pointer; }
+.pop .item:hover { background: var(--panel-2); }
+.pop .item span { flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pop .item button { border: 0; background: none; color: var(--faint); padding: 0 2px; }
+.pop .empty { padding: 8px; color: var(--faint); font-size: 12.5px; }
+.presetrow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
+.presetrow select { padding: 6px 8px; font-size: 12.5px; }
+.presetrow .iconbtn { height: 32px; font-size: 12px; }
+.modal { position: fixed; inset: 0; z-index: 80; background: rgba(6,6,8,.88); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; }
+.modal.open { display: flex; }
+.modal .bar2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.modal .bar2 .sep { width: 1px; height: 22px; background: var(--line); }
+.modal .bar2 label { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.modal .bar2 input[type=range] { width: 120px; }
+.modal .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.paint { position: relative; max-width: 92vw; max-height: 74vh; touch-action: none; }
+.paint img, .paint canvas { display: block; max-width: 92vw; max-height: 74vh; }
+.paint canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+#maskCanvas { opacity: .55; }
+.croprect { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,.5); pointer-events: none; }
+.hint { color: var(--faint); font-size: 12px; }
+.galtools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.galtools input[type=text] { flex: 1; min-width: 160px; padding: 6px 10px; }
+.galtools .seg button { padding: 4px 9px; font-size: 12px; }
+.selbar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); padding: 8px 10px; margin-top: 10px; font-size: 13px; }
+.selbar b { margin-right: auto; }
+.tile.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
+.tile .check { position: absolute; right: 7px; top: 7px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); display: none; }
+.selecting .tile .check { display: block; }
+.selecting .tile { cursor: pointer; }
+.tile.sel .check { background: var(--accent); border-color: var(--accent); }
+.tile.sel .check::after { content: "✓"; color: var(--accent-ink); font-size: 13px; display: grid; place-items: center; height: 100%; }
+.selecting .tile .acts { display: none; }
+.history { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; align-items: center; }
+.history .h { flex: none; width: 54px; height: 54px; border-radius: 6px; overflow: hidden; border: 2px solid transparent; cursor: pointer; background: var(--panel-2); position: relative; }
+.history .h img { width: 100%; height: 100%; object-fit: cover; }
+.history .h.cur { border-color: var(--accent); }
+.history .h.src::after { content: "src"; position: absolute; left: 2px; bottom: 2px; font: 9px var(--mono); color: #fff; background: rgba(0,0,0,.6); padding: 0 3px; border-radius: 3px; }
+.history .arrow { color: var(--faint); font-size: 12px; flex: none; }
+.sectitle { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: -6px; }
+.enginerow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.enginerow select { width: auto; padding: 4px 6px; font-size: 12.5px; }
+.dotw { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); display: inline-block; }
+.dotw.on { background: var(--ok); }
+.qitem .mv { color: var(--faint); }
+.qitem .mv:hover { color: var(--text); }
+.card h3 .qbtns { display: flex; gap: 10px; }
+.btns .upsc { display: flex; gap: 8px; grid-column: span 2; }
+.btns .upsc .linkbtn { flex: 1; }
+
+@media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); }
+  .controls { overflow: visible; }
+  .lb { grid-template-columns: 1fr; grid-template-rows: 60vh auto; overflow-y: auto; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><h1>Qwen-Image Studio</h1><button class="privbtn" id="privBtn" title="Private mode: nothing is saved to disk or logged">🔒 Private</button></div>
+    <div class="controls">
+      <div class="seg tabs" id="tabs">
+        <button data-mode="edit" class="on">Edit</button>
+        <button data-mode="gen">Generate</button>
+      </div>
+
+      <div class="privnote hidden" id="privNote">Private mode. Nothing is saved unless you download or keep it.</div>
+
+      <div class="field edit-only hidden">
+        <div class="label">Images <span class="val" id="refcount">0 / 3</span></div>
+        <div class="refs" id="refs"></div>
+        <div class="drop" id="drop" title="You can also paste an image, or press Edit on any gallery image">Drop, paste or <u>choose</u> an image</div>
+        <input type="file" id="file" accept="image/*" multiple hidden>
+        <div class="assist hidden" id="assist">
+          <button class="linkbtn" id="suggestBtn" title="Qwen3-VL looks at image #1 and suggests edits">✨ Suggest edits</button>
+          <button class="linkbtn" id="describeBtn" title="Qwen3-VL writes a prompt that describes image #1">Describe</button>
+        </div>
+        <div class="chips ai hidden" id="aiChips"></div>
+      </div>
+
+      <div class="field">
+        <div class="label"><span id="promptLabel">Prompt</span>
+          <span class="labelbtns"><button id="favBtn" title="Save this prompt to favorites">☆</button><button id="histBtn" title="Recent and favorite prompts">🕘</button></span></div>
+        <textarea id="prompt"></textarea>
+        <div class="chips gen-only" id="styleChips"></div>
+        <div class="chips edit-only hidden" id="editChips"></div>
+      </div>
+
+      <div class="field">
+        <div class="label">Speed</div>
+        <div class="seg" id="presets">
+          <button data-p="turbo" class="on" title="4-step LoRA at 768 px. Best for iterating.">⚡ Turbo</button>
+          <button data-p="draft" title="Full model at 512 px, 10 steps, Fast mode">Draft</button>
+          <button data-p="balanced" title="Full model at 768 px, 16 steps, Fast mode">Balanced</button>
+          <button data-p="quality" title="Full model at 1024 px, 24 steps. Slow, for finals.">Quality</button>
+        </div>
+        <div class="presetrow">
+          <select id="myPresets" title="Your saved settings"><option value="">My presets</option></select>
+          <button class="iconbtn" id="savePreset" title="Save current settings as a preset">Save</button>
+          <button class="iconbtn hidden" id="delPreset" title="Delete this preset">✕</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="label">Size <span class="val" id="sizeVal">768 × 768</span></div>
+        <div class="aspects" id="aspects"></div>
+        <div class="seg" id="bases">
+          <button data-b="512">512</button><button data-b="768" class="on">768</button><button data-b="1024">1024</button><button data-b="1328">1328</button><button data-b="custom">Custom</button>
+        </div>
+        <div class="row hidden" id="customSize">
+          <input type="number" id="cw" value="1024" step="16" min="256" max="2048" title="Width">
+          <span style="flex:none;color:var(--faint)">×</span>
+          <input type="number" id="ch" value="1024" step="16" min="256" max="2048" title="Height">
+        </div>
+      </div>
+
+      <details>
+        <summary>More settings</summary>
+        <div class="inner">
+          <label class="toggle" id="turboRow" title="Alibaba's Fun-Acc distillation LoRA. Runs 4 steps at CFG 1."><span>Turbo LoRA</span>
+            <span class="switch"><input type="checkbox" id="turbo" checked><span></span></span></label>
+          <div class="field" id="schedRow" title="Matched shifts the LoRA's schedule to your output size. It looked sharper in tests.">
+            <div class="label">Turbo schedule</div>
+            <div class="seg" id="turboSched"><button data-v="matched" class="on">Matched to size</button><button data-v="trained">Original</button></div>
+          </div>
+          <div class="lockednote hidden" id="turboNote">Turbo uses 4 steps at CFG 1. Greyed-out settings are skipped.</div>
+
+          <div class="field turbo-lock">
+            <div class="label">Negative prompt</div>
+            <textarea id="negative" class="small" placeholder="Optional"></textarea>
+          </div>
+          <div class="field edit-only hidden" title="Resolution your image is read at. Higher keeps more detail but is slower.">
+            <div class="label">Reference detail <span class="val" id="refMaxVal">768 px</span></div>
+            <div class="seg" id="refMax"><button data-v="512">512</button><button data-v="768" class="on">768</button><button data-v="1024">1024</button></div>
+          </div>
+          <div class="field turbo-lock">
+            <div class="label">Steps <span class="val" id="stepsVal">16</span></div>
+            <input type="range" id="steps" min="4" max="50" value="16">
+          </div>
+          <div class="field turbo-lock" title="How closely to follow the prompt">
+            <div class="label">CFG <span class="val" id="cfgVal">6.0</span></div>
+            <input type="range" id="cfg" min="1" max="10" step="0.5" value="6">
+          </div>
+          <div class="field edit-only hidden turbo-lock" title="How closely to stick to the original image. 0 uses the CFG value.">
+            <div class="label">Image guidance <span class="val" id="imgCfgVal">auto</span></div>
+            <input type="range" id="imgCfg" min="0" max="10" step="0.5" value="0">
+          </div>
+          <div class="field">
+            <div class="label">Seed</div>
+            <div class="seed">
+              <input type="number" id="seed" value="-1" title="-1 picks a random seed">
+              <button class="iconbtn" id="dice" title="Random seed">🎲</button>
+              <button class="iconbtn" id="lockSeed" title="Keep this seed for the next run">🔒</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">Variations <span class="val" id="batchVal">1</span></div>
+            <input type="range" id="batch" min="1" max="4" value="1">
+          </div>
+          <label class="toggle turbo-lock" title="EasyCache reuses similar steps. About 1.5 to 2x faster, slightly softer."><span>Fast mode</span>
+            <span class="switch"><input type="checkbox" id="fast"><span></span></span></label>
+          <div class="field turbo-lock" id="fastTh"><div class="label">Cache threshold <span class="val" id="fastThVal">0.20</span></div>
+            <input type="range" id="fastThreshold" min="0.05" max="0.5" step="0.05" value="0.2"></div>
+          <label class="toggle" title="Rough image after every step. Runs without the warm engine, so each job starts about 20 s slower."><span>Live preview</span>
+            <span class="switch"><input type="checkbox" id="preview"><span></span></span></label>
+          <div class="row turbo-lock">
+            <div class="field"><div class="label">Sampler</div><select id="sampler"></select></div>
+            <div class="field"><div class="label">Scheduler</div><select id="scheduler"></select></div>
+          </div>
+          <div class="field turbo-lock"><div class="label">Flow shift <span class="val" id="shiftVal">auto</span></div>
+            <input type="range" id="shift" min="0" max="8" step="0.5" value="0"></div>
+          <label class="toggle" title="A desktop notification when a job finishes and this tab is in the background. Private jobs don't show their prompt."><span>Notify when done</span>
+            <span class="switch"><input type="checkbox" id="notify"><span></span></span></label>
+          <div class="field" title="The engine keeps compiled graphs and recent prompts ready between jobs. Weights stay on disk, so it uses about 1 GB while idle.">
+            <div class="label">Engine</div>
+            <div class="enginerow"><span class="dotw" id="engDot"></span><span id="engTxt">Unloaded</span>
+              <span style="margin-left:auto">keep for</span>
+              <select id="idleMin"><option>2</option><option>5</option><option selected>10</option><option>20</option><option>30</option><option>60</option></select><span>min</span>
+              <button class="linkbtn" id="unload">Unload</button></div>
+          </div>
+        </div>
+      </details>
+    </div>
+    <div class="foot">
+      <div class="est"><span>Estimated time</span><b id="est"></b></div>
+      <div class="warn hidden" id="memWarn">Large size. May run out of memory on 16 GB.</div>
+      <div class="err hidden" id="formErr"></div>
+      <button class="go" id="go"><span id="goLabel">Generate</span><kbd>⌘ ↵</kbd></button>
+    </div>
+  </aside>
+
+  <main>
+    <section class="stage">
+      <div class="canvas" id="canvas">
+        <div class="empty" id="empty"><h2>Ready</h2>Add an image and describe the change.</div>
+        <img id="stageImg" class="hidden" alt="">
+        <span class="badge hidden" id="stageBadge"></span>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h3>Now running</h3>
+          <div id="idle" style="color:var(--faint);font-size:13px">Idle</div>
+          <div id="running" class="hidden">
+            <div class="stagetxt"><span id="stageName">-</span><span id="stepTxt"></span></div>
+            <div class="bar"><i id="barFill"></i></div>
+            <div class="stats">
+              <div>Speed<b id="spi">-</b></div>
+              <div>Remaining<b id="eta">-</b></div>
+              <div>Elapsed<b id="elapsed">-</b></div>
+              <div>Engine<b id="runEngine">-</b></div>
+            </div>
+            <p id="runPrompt" style="font-size:12.5px;color:var(--muted);margin:12px 0 10px;max-height:60px;overflow:hidden"></p>
+            <button class="linkbtn danger" id="cancelRun">Cancel</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Queue <span class="qbtns"><button id="pauseQ">Pause</button><button id="clearQ">Clear finished</button></span></h3>
+          <div class="queue" id="queue"><div style="color:var(--faint);font-size:13px">Empty</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="privtray hidden" id="privTray">
+      <div class="gal-head"><h2>Private session</h2><span><button class="linkbtn danger" id="discardAll">Discard all</button></span></div>
+      <div style="height:12px"></div>
+      <div class="gallery" id="privGallery"></div>
+    </section>
+
+    <section id="galSection">
+      <div class="gal-head"><h2>Gallery</h2><span><span id="galCount"></span> <button class="linkbtn" id="selectBtn">Select</button></span></div>
+      <div class="galtools">
+        <input type="text" id="search" placeholder="Search prompts">
+        <div class="seg" id="typeFilter"><button data-v="all" class="on">All</button><button data-v="edit">Edits</button><button data-v="gen">Generated</button><button data-v="upscale">Upscaled</button></div>
+        <div class="seg" id="whenFilter"><button data-v="any" class="on">Any time</button><button data-v="today">Today</button><button data-v="week">7 days</button></div>
+      </div>
+      <div class="selbar hidden" id="selBar"><b id="selCount">0 selected</b>
+        <button class="linkbtn" id="selAll">Select all</button>
+        <button class="linkbtn" id="selZip">Download</button>
+        <button class="linkbtn" id="selCompare">Compare</button>
+        <button class="linkbtn danger" id="selDelete">Delete</button>
+        <button class="linkbtn" id="selDone">Done</button></div>
+      <div style="height:12px"></div>
+      <div class="gallery" id="gallery"></div>
+    </section>
+  </main>
+</div>
+
+<div class="lb" id="lb">
+  <div class="view">
+    <button class="nav" id="prev" style="left:18px">‹</button>
+    <div class="cmp" id="cmp">
+      <img id="lbImg" alt="">
+      <div class="before hidden" id="before"><img id="lbBefore" alt=""></div>
+      <div class="handle hidden" id="handle"></div>
+      <span class="lbl hidden" id="lblB" style="left:10px">before</span>
+      <span class="lbl hidden" id="lblA" style="right:10px">after</span>
+    </div>
+    <button class="nav" id="next" style="right:18px">›</button>
+  </div>
+  <div class="info">
+    <button class="linkbtn close" id="lbClose">Close ✕</button>
+    <div class="prompt" id="lbPrompt"></div>
+    <div class="prompt hidden" id="lbPrompt2"></div>
+    <div id="histWrap" class="hidden"><div class="sectitle">History</div><div style="height:10px"></div><div class="history" id="history"></div></div>
+    <dl class="kv" id="lbMeta"></dl>
+    <div class="btns" id="lbBtns">
+      <button class="linkbtn primary" id="lbEdit">Edit this image</button>
+      <button class="linkbtn" id="lbReuse">Reuse settings</button>
+      <button class="linkbtn" id="lbVary">New variation</button>
+      <div class="upsc"><button class="linkbtn" id="lbUp2" title="ESRGAN, then scaled to 2×">Upscale 2×</button><button class="linkbtn" id="lbUp4" title="ESRGAN 4×">Upscale 4×</button></div>
+      <a class="linkbtn" id="lbDl" download style="text-align:center;text-decoration:none">Download</a>
+      <button class="linkbtn hidden" id="lbKeep">Keep in gallery</button>
+      <button class="linkbtn danger" id="lbDel">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="maskModal">
+  <div class="bar2">
+    <label>Brush <input type="range" id="brush" min="8" max="200" value="48"></label>
+    <div class="seg" id="maskTool" style="width:auto"><button data-v="paint" class="on">Paint</button><button data-v="erase">Erase</button></div>
+    <span class="sep"></span>
+    <button class="linkbtn" id="maskInvert">Invert</button>
+    <button class="linkbtn" id="maskClear">Clear</button>
+    <span class="sep"></span>
+    <button class="linkbtn" id="maskCancel">Cancel</button>
+    <button class="linkbtn primary" id="maskDone">Use mask</button>
+  </div>
+  <div class="paint" id="maskPaint"><img id="maskImg" alt=""><canvas id="maskCanvas"></canvas></div>
+  <div class="hint">Paint over the area to change. Everything else stays exactly as it is.</div>
+</div>
+
+<div class="modal" id="cropModal">
+  <div class="bar2">
+    <button class="linkbtn" id="rotL" title="Rotate left">⟲</button>
+    <button class="linkbtn" id="rotR" title="Rotate right">⟳</button>
+    <button class="linkbtn" id="flipH" title="Flip horizontally">⇋</button>
+    <span class="sep"></span>
+    <button class="linkbtn" id="cropReset">Reset</button>
+    <button class="linkbtn" id="cropCancel">Cancel</button>
+    <button class="linkbtn primary" id="cropDone">Apply</button>
+  </div>
+  <div class="paint" id="cropPaint"><canvas id="cropCanvas" style="position:static"></canvas><div class="croprect hidden" id="cropRect"></div></div>
+  <div class="hint">Drag on the image to crop. Leave it empty to keep the whole image.</div>
+</div>
+
+<div class="pop hidden" id="pop"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body || {}) });
+const toast = msg => { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2400); };
+const fmtDur = s => { s = Math.max(0, Math.round(s)); if (s < 60) return s + "s"; const m = Math.floor(s / 60), r = s % 60; return m < 60 ? `${m}m ${String(r).padStart(2, "0")}s` : `${Math.floor(m / 60)}h ${m % 60}m`; };
+const escapeHtml = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const show = el => el.classList.remove("hidden"), hide = el => el.classList.add("hidden");
+const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem("qis." + k); localStorage.setItem("qis." + k, v); } catch (e) { return null; } };
+
+const STYLES = {
+  "Photoreal": "photorealistic, shot on 85mm lens, natural light, shallow depth of field, fine film grain, highly detailed",
+  "Cinematic": "cinematic still, anamorphic lens, dramatic lighting, color graded, moody atmosphere",
+  "Product": "studio product photography, seamless background, softbox lighting, crisp reflections, commercial quality",
+};
+const EDITS = ["Change the background to ", "Remove the ", "Make it night time with city lights"];
+const ASPECTS = [["1:1",1,1],["4:3",4,3],["3:4",3,4],["16:9",16,9],["9:16",9,16],["3:2",3,2],["2:3",2,3],["match","m","m"]];
+const PRESETS = {
+  turbo:    { base: 768,  refMax: 768,  steps: 4,  fast: false, turbo: true, th: 0.2,  preview: false },
+  draft:    { base: 512,  refMax: 512,  steps: 10, fast: true,  th: 0.25, preview: true },
+  balanced: { base: 768,  refMax: 768,  steps: 16, fast: true,  th: 0.2,  preview: true },
+  quality:  { base: 1024, refMax: 1024, steps: 24, fast: false, th: 0.2,  preview: true },
+};
+
+const S = {
+  mode: "edit", aspect: "match", base: 768, refMax: 768, refs: [], mask: null, turboSched: "matched",
+  private: false, turboOk: true, calib: {}, jobs: [], gallery: [], privItems: [], polled: false,
+  lb: null, view: null, cmp: null, seedLocked: false, preset: "turbo",
+  filter: { q: "", type: "all", when: "any" }, selecting: false, sel: new Set(),
+  library: { presets: {}, favorites: [] }, assistJobs: new Set(), paused: false,
+};
+
+// ---------- presets ----------
+function applyPreset(k) {
+  const p = PRESETS[k]; S.preset = k;
+  $("#turbo").checked = !!p.turbo && S.turboOk;
+  S.base = p.base; S.refMax = p.refMax; $("#steps").value = p.steps; $("#fast").checked = p.fast; $("#fastThreshold").value = p.th;
+  $("#preview").checked = p.preview;
+  $$("#bases button").forEach(b => b.classList.toggle("on", b.dataset.b == p.base));
+  $$("#refMax button").forEach(b => b.classList.toggle("on", b.dataset.v == p.refMax));
+  update();
+}
+function syncPreset() {
+  const turbo = $("#turbo").checked;
+  const hit = Object.keys(PRESETS).find(k => { const p = PRESETS[k]; return S.base === p.base && S.refMax === p.refMax && turbo === !!p.turbo && (turbo || (+$("#steps").value === p.steps && $("#fast").checked === p.fast)); });
+  S.preset = hit || null;
+  $$("#presets button").forEach(b => b.classList.toggle("on", b.dataset.p === hit));
+  $$(".turbo-lock").forEach(el => el.classList.toggle("locked", turbo));
+  $("#turboNote").classList.toggle("hidden", !turbo);
+  $("#schedRow").classList.toggle("hidden", !turbo);
+}
+function snapshot() {
+  return { base: S.base, aspect: S.aspect, refMax: S.refMax, cw: +$("#cw").value, ch: +$("#ch").value, steps: +$("#steps").value,
+    cfg: +$("#cfg").value, imgCfg: +$("#imgCfg").value, sampler: $("#sampler").value, scheduler: $("#scheduler").value,
+    shift: +$("#shift").value, fast: $("#fast").checked, th: +$("#fastThreshold").value, turbo: $("#turbo").checked,
+    turboSched: S.turboSched, preview: $("#preview").checked, negative: $("#negative").value, batch: +$("#batch").value };
+}
+function restore(p) {
+  S.base = p.base; S.refMax = p.refMax || 768; if (p.aspect) setAspect(p.aspect);
+  $("#cw").value = p.cw || 1024; $("#ch").value = p.ch || 1024; $("#steps").value = p.steps; $("#cfg").value = p.cfg; $("#imgCfg").value = p.imgCfg || 0;
+  $("#sampler").value = p.sampler || "euler"; $("#scheduler").value = p.scheduler || "default"; $("#shift").value = p.shift || 0;
+  $("#fast").checked = !!p.fast; $("#fastThreshold").value = p.th || 0.2; $("#turbo").checked = !!p.turbo && S.turboOk;
+  setSched(p.turboSched || "matched"); $("#preview").checked = !!p.preview; $("#negative").value = p.negative || ""; $("#batch").value = p.batch || 1;
+  $$("#bases button").forEach(b => b.classList.toggle("on", b.dataset.b == S.base));
+  $$("#refMax button").forEach(b => b.classList.toggle("on", b.dataset.v == S.refMax));
+  update();
+}
+function renderPresets() {
+  const sel = $("#myPresets"), cur = sel.value;
+  sel.innerHTML = `<option value="">My presets</option>` + Object.keys(S.library.presets).map(n => `<option>${escapeHtml(n)}</option>`).join("");
+  sel.value = S.library.presets[cur] ? cur : "";
+  $("#delPreset").classList.toggle("hidden", !sel.value);
+}
+async function saveLibrary(part) { S.library = await post("/api/library", part); renderPresets(); renderFav(); }
+
+// ---------- controls ----------
+function buildStatic() {
+  $("#styleChips").innerHTML = Object.keys(STYLES).map(k => `<button data-s="${k}">+ ${k}</button>`).join("");
+  $("#editChips").innerHTML = EDITS.map(e => `<button>${e.trim()}…</button>`).join("");
+  $("#aspects").innerHTML = ASPECTS.map(([k, w, h]) => {
+    if (k === "match") return `<button data-a="match" class="edit-only hidden"><span class="shape" style="width:16px;height:16px;border-style:dashed"></span>Match</button>`;
+    const sc = 18 / Math.max(w, h);
+    return `<button data-a="${k}"><span class="shape" style="width:${w * sc}px;height:${h * sc}px"></span>${k}</button>`;
+  }).join("");
+}
+function setMode(mode) {
+  S.mode = mode;
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  $$(".edit-only").forEach(el => el.classList.toggle("hidden", mode !== "edit"));
+  $$(".gen-only").forEach(el => el.classList.toggle("hidden", mode !== "gen"));
+  $("#promptLabel").textContent = mode === "edit" ? "Instruction" : "Prompt";
+  $("#prompt").placeholder = mode === "edit" ? "Describe the change, e.g. make his hat red" : "Describe the image";
+  $("#goLabel").textContent = mode === "edit" ? "Edit" : "Generate";
+  if (mode === "edit" && S.refs.length && S.aspect !== "match") setAspect("match");
+  if (mode === "gen" && S.aspect === "match") setAspect("1:1");
+  renderRefs();
+}
+function setAspect(a) { S.aspect = a; $$("#aspects button").forEach(b => b.classList.toggle("on", b.dataset.a === a)); update(); }
+function setSched(v) { S.turboSched = v; $$("#turboSched button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); }
+const snap = v => Math.max(256, Math.round(v / 16) * 16);
+function outSize() {
+  if (S.base === "custom") return [snap(+$("#cw").value), snap(+$("#ch").value)];
+  let ar;
+  if (S.aspect === "match") { const r = S.refs[0]; ar = r ? r.width / r.height : 1; }
+  else { const [w, h] = S.aspect.split(":").map(Number); ar = w / h; }
+  const area = S.base * S.base;
+  return [snap(Math.sqrt(area * ar)), snap(Math.sqrt(area / ar))];
+}
+function refSizes() { return S.refs.map(r => { const s = Math.min(1, S.refMax / Math.max(r.width, r.height)); return [r.width * s, r.height * s]; }); }
+function estimate() {
+  const [w, h] = outSize();
+  let mp = w * h / 1048576;
+  if (S.mode === "edit") refSizes().forEach(([a, b]) => mp += a * b / 1048576);
+  const turbo = $("#turbo").checked;
+  const k = S.calib[S.mode + (turbo ? "_turbo" : $("#fast").checked ? "_fast" : "")] || 80;
+  return { secs: k * Math.pow(mp, 1.2) * (turbo ? 4 : +$("#steps").value) + 30, mp };
+}
+function update() {
+  const [w, h] = outSize();
+  $("#sizeVal").textContent = `${w} × ${h}`;
+  $("#customSize").classList.toggle("hidden", S.base !== "custom");
+  $("#stepsVal").textContent = $("#steps").value;
+  $("#cfgVal").textContent = (+$("#cfg").value).toFixed(1);
+  $("#imgCfgVal").textContent = +$("#imgCfg").value ? (+$("#imgCfg").value).toFixed(1) : "auto";
+  $("#batchVal").textContent = $("#batch").value;
+  $("#fastThVal").textContent = (+$("#fastThreshold").value).toFixed(2);
+  $("#fastTh").classList.toggle("hidden", !$("#fast").checked);
+  $("#shiftVal").textContent = +$("#shift").value ? (+$("#shift").value).toFixed(1) : "auto";
+  $("#refMaxVal").textContent = S.refMax + " px";
+  $("#refcount").textContent = `${S.refs.length} / 3`;
+  $("#lockSeed").classList.toggle("on", S.seedLocked);
+  syncPreset();
+  const { secs, mp } = estimate(), n = +$("#batch").value;
+  $("#est").textContent = "≈ " + fmtDur(secs) + (n > 1 ? ` × ${n}` : "");
+  $("#memWarn").classList.toggle("hidden", mp <= 1.35);
+  $("#drop").classList.toggle("hidden", S.refs.length >= 3);
+  $("#assist").classList.toggle("hidden", !S.refs.length || !S.assistOk);
+  renderFav();
+}
+
+// ---------- reference images ----------
+function renderRefs() {
+  if (S.mask && (!S.refs.length || S.refs[0].name !== S.mask.forRef)) S.mask = null;
+  $("#refs").innerHTML = S.refs.map((r, i) => `<div class="ref"><img src="/ref/${encodeURIComponent(r.name)}" alt="">
+    <span class="tools">${i === 0 ? `<button data-act="mask" title="Paint the area to change">${S.mask ? "Mask ✓" : "Mask"}</button>` : ""}<button data-act="crop" data-i="${i}" title="Crop or rotate">Crop</button></span>
+    <span class="n">#${i + 1} · ${r.width}×${r.height}</span>${i === 0 && S.mask ? `<span class="badge2">masked</span>` : ""}
+    <button data-act="remove" data-i="${i}" title="Remove">×</button></div>`).join("");
+  if (S.mode === "edit" && S.refs.length && S.base !== "custom") setAspect("match");
+  update();
+}
+function addRef(r) {
+  if (S.refs.length >= 3) return toast("Up to 3 reference images");
+  S.refs.push(r); renderRefs();
+}
+async function upload(dataUrl, filename, kind = "image") {
+  return post("/api/upload", { data: dataUrl, filename, private: S.private, kind });
+}
+async function uploadFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith("image/") && !/\.(heic|heif)$/i.test(f.name)) continue;
+    const data = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); });
+    try { addRef(await upload(data, f.name)); } catch (e) { toast(e.message); }
+  }
+}
+
+// ---------- mask editor ----------
+const MK = { ctx: null, drawing: false, erase: false, last: null };
+function openMask() {
+  const r = S.refs[0]; if (!r) return;
+  const img = $("#maskImg"), cv = $("#maskCanvas");
+  img.onload = () => {
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    MK.ctx = cv.getContext("2d");
+    MK.ctx.clearRect(0, 0, cv.width, cv.height);
+    if (S.mask && S.mask.overlay) { const o = new Image(); o.onload = () => MK.ctx.drawImage(o, 0, 0); o.src = S.mask.overlay; }
+  };
+  img.src = `/ref/${encodeURIComponent(r.name)}`;
+  $("#maskModal").classList.add("open");
+}
+function maskPoint(e) {
+  const cv = $("#maskCanvas"), b = cv.getBoundingClientRect();
+  return [(e.clientX - b.left) * cv.width / b.width, (e.clientY - b.top) * cv.height / b.height, cv.width / b.width];
+}
+function maskStroke(e) {
+  const [x, y, scale] = maskPoint(e), ctx = MK.ctx, rad = +$("#brush").value * scale / 2;
+  ctx.globalCompositeOperation = MK.erase ? "destination-out" : "source-over";
+  ctx.strokeStyle = ctx.fillStyle = "rgba(255,70,70,1)";
+  ctx.lineWidth = rad * 2; ctx.lineCap = "round";
+  ctx.beginPath();
+  if (MK.last) { ctx.moveTo(MK.last[0], MK.last[1]); ctx.lineTo(x, y); ctx.stroke(); }
+  ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+  MK.last = [x, y];
+}
+function maskToPng(cv) {
+  const out = document.createElement("canvas"); out.width = cv.width; out.height = cv.height;
+  const src = MK.ctx.getImageData(0, 0, cv.width, cv.height).data, o = out.getContext("2d"), dst = o.createImageData(cv.width, cv.height);
+  let painted = 0;
+  for (let i = 0; i < src.length; i += 4) { const v = src[i + 3] > 20 ? 255 : 0; painted += v; dst.data[i] = dst.data[i + 1] = dst.data[i + 2] = v; dst.data[i + 3] = 255; }
+  o.putImageData(dst, 0, 0);
+  return painted ? out.toDataURL("image/png") : null;
+}
+
+// ---------- crop and rotate ----------
+const CR = { src: null, rot: 0, flip: false, rect: null, start: null, index: 0 };
+function openCrop(i) {
+  CR.index = i; CR.rot = 0; CR.flip = false; CR.rect = null;
+  const img = new Image();
+  img.onload = () => { CR.src = img; drawCrop(); $("#cropModal").classList.add("open"); };
+  img.src = `/ref/${encodeURIComponent(S.refs[i].name)}`;
+}
+function drawCrop() {
+  const cv = $("#cropCanvas"), img = CR.src, turn = CR.rot % 180 !== 0;
+  cv.width = turn ? img.naturalHeight : img.naturalWidth; cv.height = turn ? img.naturalWidth : img.naturalHeight;
+  const ctx = cv.getContext("2d");
+  ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.rotate(CR.rot * Math.PI / 180); if (CR.flip) ctx.scale(-1, 1);
+  ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2); ctx.restore();
+  CR.rect = null; hide($("#cropRect"));
+}
+function cropPoint(e) { const b = $("#cropCanvas").getBoundingClientRect(); return [Math.max(0, Math.min(b.width, e.clientX - b.left)), Math.max(0, Math.min(b.height, e.clientY - b.top)), b]; }
+function drawRect() {
+  const r = CR.rect, el = $("#cropRect");
+  if (!r || r.w < 4 || r.h < 4) return hide(el);
+  Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" }); show(el);
+}
+async function applyCrop() {
+  const cv = $("#cropCanvas"), b = cv.getBoundingClientRect(), sx = cv.width / b.width, sy = cv.height / b.height;
+  let out = cv;
+  if (CR.rect && CR.rect.w > 8 && CR.rect.h > 8) {
+    out = document.createElement("canvas");
+    out.width = Math.round(CR.rect.w * sx); out.height = Math.round(CR.rect.h * sy);
+    out.getContext("2d").drawImage(cv, CR.rect.x * sx, CR.rect.y * sy, out.width, out.height, 0, 0, out.width, out.height);
+  } else if (!CR.rot && !CR.flip) { closeModal("#cropModal"); return; }
+  try {
+    const r = await upload(out.toDataURL("image/png"), "crop");
+    if (CR.index === 0) S.mask = null;
+    S.refs[CR.index] = r; renderRefs(); toast("Image updated");
+  } catch (e) { toast(e.message); }
+  closeModal("#cropModal");
+}
+function closeModal(sel) { $(sel).classList.remove("open"); }
+
+// ---------- AI assistant ----------
+async function assist(task) {
+  if (!S.refs.length) return;
+  try {
+    const { ids } = await post("/api/jobs", { mode: "assist", task, source: S.refs[0].name });
+    ids.forEach(id => S.assistJobs.add(id));
+    toast(task === "suggest" ? "Looking at the image…" : "Describing the image…"); poll();
+  } catch (e) { toast(e.message); }
+}
+function handleAssist(j) {
+  S.assistJobs.delete(j.id);
+  if (j.state !== "done") return toast(j.error || "The assistant failed");
+  if (j.task === "suggest") {
+    const ideas = j.result || [];
+    $("#aiChips").innerHTML = ideas.map(t => `<button>${escapeHtml(t)}</button>`).join("");
+    $("#aiChips").classList.toggle("hidden", !ideas.length);
+  } else {
+    $("#prompt").value = j.result || ""; update(); toast("Description added to the prompt");
+  }
+}
+
+// ---------- prompt history and favorites ----------
+function recentPrompts() {
+  const seen = new Set(), out = [];
+  [...S.privItems, ...S.gallery].forEach(g => {
+    const m = g.meta || {}, p = (m.prompt || "").trim(), mode = m.base_mode || m.mode;
+    if (p && !seen.has(p) && mode === S.mode) { seen.add(p); out.push(p); }
+  });
+  return out.slice(0, 30);
+}
+function renderFav() {
+  const p = $("#prompt").value.trim(), on = !!p && S.library.favorites.includes(p);
+  $("#favBtn").textContent = on ? "★" : "☆"; $("#favBtn").classList.toggle("on", on);
+}
+function openPop(anchor, html, onClick) {
+  const pop = $("#pop"), b = anchor.getBoundingClientRect();
+  pop.innerHTML = html; show(pop);
+  pop.style.left = Math.min(b.left, innerWidth - 350) + "px";
+  pop.style.top = Math.min(b.bottom + 6, innerHeight - pop.offsetHeight - 10) + "px";
+  pop.onclick = onClick || null;
+}
+function openHistory() {
+  const favs = S.library.favorites, recent = recentPrompts().filter(p => !favs.includes(p));
+  const row = (p, fav) => `<div class="item" data-p="${escapeHtml(p)}"><span>${escapeHtml(p)}</span>${fav ? `<button data-unfav="${escapeHtml(p)}" title="Remove from favorites">✕</button>` : ""}</div>`;
+  openPop($("#histBtn"), `<h4>Favorites</h4>${favs.map(p => row(p, true)).join("") || `<div class="empty">Star a prompt to keep it here.</div>`}
+    <h4>Recent</h4>${recent.map(p => row(p)).join("") || `<div class="empty">No recent prompts.</div>`}`, e => {
+    const un = e.target.closest("[data-unfav]");
+    if (un) { e.stopPropagation(); saveLibrary({ favorites: S.library.favorites.filter(x => x !== un.dataset.unfav) }).then(openHistory); return; }
+    const it = e.target.closest(".item"); if (!it) return;
+    $("#prompt").value = it.dataset.p; hide($("#pop")); update();
+  });
+}
+
+// ---------- submit ----------
+async function submit() {
+  const prompt = $("#prompt").value.trim(), err = $("#formErr");
+  hide(err);
+  if (!prompt) { err.textContent = S.mode === "edit" ? "Write what you want to change." : "Write a prompt first."; return show(err); }
+  if (S.mode === "edit" && !S.refs.length) { err.textContent = "Add an image to edit."; return show(err); }
+  const [width, height] = outSize();
+  const spec = {
+    mode: S.mode, prompt, negative: $("#negative").value, width, height,
+    steps: +$("#steps").value, cfg: +$("#cfg").value, img_cfg: S.mode === "edit" && +$("#imgCfg").value ? +$("#imgCfg").value : null,
+    seed: +$("#seed").value, batch: +$("#batch").value, sampler: $("#sampler").value, scheduler: $("#scheduler").value,
+    flow_shift: +$("#shift").value || null, fast: $("#fast").checked, fast_threshold: +$("#fastThreshold").value,
+    private: S.private, turbo: $("#turbo").checked, turbo_schedule: S.turboSched, preview: $("#preview").checked,
+    refs: S.mode === "edit" ? S.refs.map(r => r.name) : [], mask: S.mode === "edit" && S.mask ? S.mask.name : null, ref_max: S.refMax,
+  };
+  try {
+    const { ids } = await post("/api/jobs", spec);
+    toast((S.private ? "🔒 " : "") + (ids.length > 1 ? `Queued ${ids.length}` : "Queued"));
+    if (!S.seedLocked) $("#seed").value = -1;
+    poll();
+  } catch (e) { err.textContent = e.message; show(err); }
+}
+
+// ---------- live state ----------
+let pollTimer;
+async function poll() {
+  clearTimeout(pollTimer);
+  try {
+    const st = await api("/api/state");
+    S.calib = st.calib; S.paused = st.paused; S.assistOk = st.assistant; S.upscaleOk = st.upscaler;
+    applyPrivateUI(!!st.private_mode);
+    if (!st.turbo && S.turboOk) { S.turboOk = false; $("#turbo").checked = false; $("#turboRow").classList.add("locked"); $('#presets [data-p="turbo"]').disabled = true; if (S.preset === "turbo") applyPreset("draft"); }
+    if (!$("#sampler").options.length) {
+      $("#sampler").innerHTML = st.samplers.map(s => `<option>${s}</option>`).join("");
+      $("#scheduler").innerHTML = st.schedulers.map(s => `<option>${s}</option>`).join("");
+      $("#idleMin").value = String(st.settings.idle_minutes);
+    }
+    $("#engDot").classList.toggle("on", st.engine_warm);
+    $("#engTxt").textContent = st.engine_warm ? "Warm" : "Unloaded";
+    $("#pauseQ").textContent = st.paused ? "Resume" : "Pause";
+    const prev = new Map(S.jobs.map(j => [j.id, j.state]));
+    S.jobs = st.jobs;
+    const finished = S.polled ? S.jobs.filter(j => ["done", "error"].includes(j.state) && prev.get(j.id) && prev.get(j.id) !== j.state) : [];
+    S.polled = true;
+    S.jobs.filter(j => S.assistJobs.has(j.id) && ["done", "error", "cancelled"].includes(j.state)).forEach(handleAssist);
+    const outputs = finished.filter(j => j.state === "done" && j.output);
+    if (outputs.length) {
+      const last = outputs[outputs.length - 1];
+      await loadGallery(); await loadPrivate();
+      S.view = { kind: last.private ? "private" : "gallery", name: last.output };
+      notifyDone(last);
+    }
+    renderRun(); renderQueue(); update();
+  } catch (e) { /* server restarting */ }
+  const busy = S.jobs.some(j => ["queued", "starting", "running"].includes(j.state));
+  pollTimer = setTimeout(poll, busy ? 1500 : 5000);
+}
+function notifyDone(j) {
+  if (document.hidden) document.title = "✓ Done · Qwen-Image Studio";
+  if (!$("#notify").checked || !document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
+  const body = j.private ? "Your private result is ready." : (j.mode === "upscale" ? "Upscale finished" : j.prompt);
+  new Notification("Qwen-Image Studio", { body, silent: false });
+}
+
+// ---------- stage ----------
+const items = kind => kind === "private" ? S.privItems : S.gallery;
+const urlOf = (kind, name) => `/${kind === "private" ? "private" : "outputs"}/${encodeURIComponent(name)}`;
+const findItem = v => v && items(v.kind).find(g => g.name === v.name);
+function currentView() {
+  if (findItem(S.view)) return S.view;
+  if (S.private && S.privItems.length) return { kind: "private", name: S.privItems[0].name };
+  if (!S.private && S.gallery.length) return { kind: "gallery", name: S.gallery[0].name };
+  return null;
+}
+function setStage(src, label, onclick) {
+  const img = $("#stageImg"), badge = $("#stageBadge");
+  if (src) { if (img.getAttribute("src") !== src) img.src = src; show(img); hide($("#empty")); }
+  else { hide(img); show($("#empty")); }
+  badge.textContent = label || ""; badge.classList.toggle("hidden", !label);
+  img.onclick = onclick || null; img.style.cursor = onclick ? "zoom-in" : "default";
+}
+function renderRun() {
+  const j = S.jobs.find(x => x.state === "running" || x.state === "starting");
+  $("#idle").classList.toggle("hidden", !!j);
+  $("#running").classList.toggle("hidden", !j);
+  if (j) {
+    const elapsed = j.started ? Date.now() / 1000 - j.started : 0;
+    $("#stageName").textContent = j.stage || "Starting";
+    $("#stepTxt").textContent = j.total ? `step ${j.step}/${j.total}` : "";
+    const pct = j.total ? (j.step / j.total) * 92 + 4 : Math.min(95, elapsed / Math.max(1, j.estimate || 60) * 100);
+    $("#barFill").style.width = pct + "%";
+    $("#spi").textContent = j.sec_per_it ? j.sec_per_it + " s/step" : "-";
+    $("#eta").textContent = j.eta != null ? fmtDur(j.eta) : (j.estimate ? "~" + fmtDur(j.estimate - elapsed) : "-");
+    $("#elapsed").textContent = fmtDur(elapsed);
+    $("#runEngine").textContent = j.engine === "warm" ? "warm" : j.engine === "cold" ? "cold" : "-";
+    $("#runPrompt").textContent = (j.private ? "🔒 " : "") + (j.mode === "edit" ? "✎ " : "") + j.prompt;
+    $("#cancelRun").onclick = () => cancelJob(j.id);
+    const src = j.refs && j.refs.length ? `/ref/${encodeURIComponent(j.refs[0])}` : null;
+    if (j.has_preview) setStage(`/preview/${j.id}?t=${j.step}`, `live preview · step ${j.step}/${j.total || "?"}`);
+    else if (src) setStage(src, { edit: "editing this image…", upscale: "upscaling…", assist: "reading this image…" }[j.mode] || "");
+    else { setStage(null); $("#empty").innerHTML = `<h2>${escapeHtml(j.stage || "Starting")}…</h2>`; }
+  } else {
+    const v = currentView(), g = findItem(v);
+    if (g) setStage(urlOf(v.kind, v.name), `${v.kind === "private" ? "🔒 " : ""}${g.meta.width || ""}×${g.meta.height || ""}`, () => openLb(v.kind, v.name));
+    else { setStage(null); $("#empty").innerHTML = S.private ? "<h2>🔒 Private</h2>Nothing is saved unless you keep it." : "<h2>Ready</h2>Add an image and describe the change."; }
+  }
+  document.title = j ? `${j.total ? Math.round(j.step / j.total * 100) + "% · " : ""}Qwen-Image Studio` : (document.title.startsWith("✓") ? document.title : "Qwen-Image Studio");
+}
+
+// ---------- queue ----------
+function renderQueue() {
+  const list = S.jobs.slice().reverse();
+  const label = j => j.mode === "assist" ? (j.task === "describe" ? "describe" : "suggest") : j.mode === "upscale" ? "upscale" : `${j.mode} ${j.width}×${j.height}`;
+  $("#queue").innerHTML = list.length ? list.map(j => {
+    const status = j.state === "queued" ? `~${fmtDur(j.estimate || 0)}` : j.state === "running" ? (j.total ? `${j.step}/${j.total}` : "…") : j.state;
+    const live = ["queued", "running", "starting"].includes(j.state);
+    const moves = j.state === "queued" ? `<button class="mv" data-move="up" data-id="${j.id}" title="Move up">↑</button><button class="mv" data-move="down" data-id="${j.id}" title="Move down">↓</button>` : "";
+    return `<div class="qitem ${j.state}" title="${escapeHtml(j.error || j.prompt)}"><span class="dot"></span>
+      <span class="p"><small>${j.private ? "🔒 " : ""}${label(j)}</small>${escapeHtml(j.prompt)}</span>
+      <span>${moves}${live ? `<button data-cancel="${j.id}" title="Cancel">✕</button>` : ""}<small style="color:var(--faint);font-family:var(--mono)">${status}</small></span></div>`;
+  }).join("") : `<div style="color:var(--faint);font-size:13px">Empty</div>`;
+}
+async function cancelJob(id) { await post(`/api/jobs/${id}/cancel`); toast("Cancelled"); poll(); }
+
+// ---------- gallery ----------
+function passes(g) {
+  const m = g.meta || {}, f = S.filter;
+  if (f.q && !(m.prompt || "").toLowerCase().includes(f.q.toLowerCase())) return false;
+  if (f.type !== "all" && (m.mode || "gen") !== f.type) return false;
+  if (f.when !== "any") { const age = Date.now() / 1000 - g.mtime; if (age > (f.when === "today" ? 86400 : 7 * 86400)) return false; }
+  return true;
+}
+const visibleGallery = () => S.gallery.filter(passes);
+async function loadGallery() { S.gallery = await api("/api/gallery"); renderGallery(); }
+function tagFor(m) {
+  if (m.mode === "upscale") return `upscale ×${m.scale || 4}`;
+  if (m.mode === "edit") return m.mask ? "edit · mask" : "edit";
+  return "";
+}
+function renderGallery() {
+  const list = visibleGallery();
+  $("#galCount").textContent = S.gallery.length ? (list.length === S.gallery.length ? `${S.gallery.length} images` : `${list.length} of ${S.gallery.length}`) : "";
+  $("#galSection").classList.toggle("selecting", S.selecting);
+  $("#gallery").innerHTML = list.map(g => {
+    const tag = tagFor(g.meta || {});
+    return `<div class="tile ${S.sel.has(g.name) ? "sel" : ""}" data-name="${escapeHtml(g.name)}">
+      <img loading="lazy" src="${urlOf("gallery", g.name)}" alt="">${tag ? `<span class="tag">${tag}</span>` : ""}<span class="check"></span>
+      <div class="acts"><span data-act="edit">Edit</span><span data-act="reuse">Reuse</span><span data-act="delete" title="Delete permanently">✕</span></div>
+    </div>`;
+  }).join("") || `<div style="color:var(--faint)">${S.gallery.length ? "No matches." : "No images yet."}</div>`;
+  $("#selCount").textContent = `${S.sel.size} selected`;
+  $("#selCompare").disabled = S.sel.size !== 2;
+}
+function setSelecting(on) {
+  S.selecting = on; if (!on) S.sel.clear();
+  $("#selBar").classList.toggle("hidden", !on); $("#selectBtn").classList.toggle("hidden", on);
+  renderGallery();
+}
+async function zipDownload(names) {
+  const r = await fetch("/api/zip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ names }) });
+  const blob = await r.blob(), a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = (r.headers.get("Content-Disposition") || "").split('filename="')[1]?.replace('"', "") || "images.zip";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function useForEdit(g, kind = "gallery") {
+  if (!S.refs.some(r => r.name === g.name)) addRef({ name: g.name, width: g.meta.width || 1024, height: g.meta.height || 1024, private: kind === "private" });
+  setMode("edit"); closeLb(); $("#prompt").value = ""; $("#prompt").focus();
+  $("#aiChips").classList.add("hidden");
+  toast("Added. Now describe the change.");
+}
+function reuse(g, newSeed) {
+  const m = g.meta; if (!m.prompt) return toast("No settings saved for this image");
+  if (m.mode === "upscale") return toast("Reuse works on generated or edited images");
+  setMode(m.mode === "edit" ? "edit" : "gen");
+  $("#prompt").value = m.prompt; $("#negative").value = m.negative || "";
+  $("#steps").value = m.steps || 16; $("#cfg").value = m.cfg || 6; $("#imgCfg").value = m.img_cfg || 0;
+  $("#seed").value = newSeed ? -1 : m.seed; S.seedLocked = !newSeed;
+  $("#sampler").value = m.sampler || "euler"; $("#scheduler").value = m.scheduler || "default";
+  $("#shift").value = m.flow_shift || 0; $("#fast").checked = !!m.fast; $("#turbo").checked = !!m.turbo && S.turboOk;
+  setSched(m.turbo_schedule || (m.turbo ? "trained" : "matched"));
+  S.base = "custom"; $("#cw").value = m.width; $("#ch").value = m.height;
+  $$("#bases button").forEach(b => b.classList.toggle("on", b.dataset.b === "custom"));
+  if (m.mode === "edit" && m.refs) { S.refs = m.refs.map(r => ({ name: r, width: m.width, height: m.height })); S.mask = null; renderRefs(); }
+  closeLb(); update(); toast(newSeed ? "Settings loaded with a new seed" : "Settings loaded");
+}
+async function deleteImages(names) {
+  if (!confirm(names.length > 1 ? `Delete ${names.length} images permanently? Their settings and logs are removed too.` : "Delete this image permanently? Its settings and logs are removed too.")) return false;
+  for (const n of names) { await api(`/api/gallery/${encodeURIComponent(n)}`, { method: "DELETE" }); forget(n); }
+  await loadGallery(); renderRun(); toast(names.length > 1 ? `Deleted ${names.length}` : "Deleted");
+  return true;
+}
+function forget(name) {
+  if (S.lb && S.lb.name === name) closeLb();
+  if (S.view && S.view.name === name) S.view = null;
+  S.sel.delete(name);
+  if (S.refs.some(r => r.name === name)) { S.refs = S.refs.filter(r => r.name !== name); renderRefs(); }
+}
+async function upscale(kind, name, scale) {
+  try { await post("/api/jobs", { mode: "upscale", source: name, scale }); closeLb(); toast(`Upscale ${scale}× queued`); poll(); }
+  catch (e) { toast(e.message); }
+}
+
+// ---------- private ----------
+async function loadPrivate() {
+  S.privItems = await api("/api/private");
+  $("#privTray").classList.toggle("hidden", !S.privItems.length && !S.private);
+  $("#privGallery").innerHTML = S.privItems.map(g => `
+    <div class="tile" data-name="${escapeHtml(g.name)}">
+      <img src="${urlOf("private", g.name)}" alt="">
+      <span class="tag">${tagFor(g.meta) ? tagFor(g.meta) + " · " : ""}${g.meta.width}×${g.meta.height}</span>
+      <div class="acts"><span data-act="edit">Edit</span><a href="${urlOf("private", g.name)}" download="${g.name}">Download</a><span data-act="keep">Keep</span><span data-act="discard" title="Discard">✕</span></div>
+    </div>`).join("") || `<div style="color:var(--faint);font-size:13px">Nothing here yet.</div>`;
+}
+function applyPrivateUI(on) {
+  if (S.private === on) return;
+  S.private = on;
+  document.body.classList.toggle("private", on);
+  $("#privBtn").classList.toggle("on", on);
+  $("#privNote").classList.toggle("hidden", !on);
+  S.view = null;
+  loadPrivate().then(renderRun);
+}
+async function setPrivate(on) {
+  await post("/api/private/mode", { on });
+  S.refs = []; S.mask = null; renderRefs();
+  applyPrivateUI(on);
+  toast(on ? "Private mode on" : "Private mode off");
+}
+async function keepPrivate(name) {
+  await post("/api/private/keep", { name });
+  const wasOpen = S.lb && S.lb.name === name;
+  await loadPrivate(); await loadGallery();
+  S.view = { kind: "gallery", name };
+  if (wasOpen) openLb("gallery", name); else renderRun();
+  toast("Saved to gallery");
+}
+async function discardPrivate(name) {
+  await post("/api/private/discard", { name });
+  forget(name); await loadPrivate(); renderRun();
+}
+
+// ---------- viewer ----------
+function allItems() { return [...S.privItems.map(g => ({ ...g, kind: "private" })), ...S.gallery.map(g => ({ ...g, kind: "gallery" }))]; }
+function renderHistory(kind, name) {
+  const all = allItems(), by = new Map(all.map(g => [g.name, g]));
+  const chain = [], seen = new Set([name]);
+  let cur = by.get(name);
+  while (cur && cur.meta.refs && cur.meta.refs[0] && !seen.has(cur.meta.refs[0]) && chain.length < 12) {
+    const p = cur.meta.refs[0]; seen.add(p);
+    const parent = by.get(p);
+    chain.unshift(parent ? { name: p, kind: parent.kind } : { name: p, kind: "source" });
+    cur = parent;
+  }
+  const kids = all.filter(g => g.meta.refs && g.meta.refs[0] === name);
+  if (!chain.length && !kids.length) return hide($("#histWrap"));
+  const thumb = (g, cls = "") => `<div class="h ${cls} ${g.kind === "source" ? "src" : ""}" data-kind="${g.kind}" data-name="${escapeHtml(g.name)}" title="${g.kind === "source" ? "Original upload" : "Open this version"}"><img src="${g.kind === "gallery" ? urlOf("gallery", g.name) : g.kind === "private" ? urlOf("private", g.name) : "/ref/" + encodeURIComponent(g.name)}" alt=""></div>`;
+  $("#history").innerHTML = chain.map(g => thumb(g)).join('<span class="arrow">›</span>') + (chain.length ? '<span class="arrow">›</span>' : "") +
+    thumb({ name, kind }, "cur") + (kids.length ? '<span class="arrow">⤷</span>' + kids.map(g => thumb(g)).join("") : "");
+  show($("#histWrap"));
+}
+function openLb(kind, name) {
+  const g = items(kind).find(x => x.name === name); if (!g) return;
+  S.lb = { kind, name }; S.cmp = null; S.view = { kind, name };
+  const m = g.meta, url = urlOf(kind, name);
+  $("#lbImg").src = url; $("#lbDl").href = url; $("#lbDl").download = name;
+  $("#lbPrompt").textContent = (kind === "private" ? "🔒 " : "") + (m.mode === "edit" ? "✎ " : m.mode === "upscale" ? `Upscaled ×${m.scale} · ` : "") + (m.prompt || name);
+  hide($("#lbPrompt2")); show($("#lbBtns"));
+  const rows = [["Size", m.width && `${m.width} × ${m.height}`], ["Seed", m.mode === "upscale" ? null : m.seed], ["Steps", m.mode === "upscale" ? null : m.steps], ["CFG", m.mode === "upscale" ? null : m.cfg], ["Image CFG", m.img_cfg],
+    ["Sampler", m.sampler && m.mode !== "upscale" && `${m.sampler} / ${m.scheduler || "default"}`], ["Fast mode", m.fast ? `on (${m.fast_threshold})` : null],
+    ["Turbo", m.turbo && m.mode !== "upscale" ? `4-step LoRA, ${m.turbo_schedule === "matched" ? "matched" : "original"} schedule` : null], ["Mask", m.mask ? "yes" : null],
+    ["Negative", m.negative], ["Time", m.seconds && fmtDur(m.seconds)], ["Speed", m.sec_per_it && m.sec_per_it + " s/step"], ["File", kind === "private" ? null : name]];
+  $("#lbMeta").innerHTML = rows.filter(r => r[1] != null && r[1] !== "").map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join("");
+  const hasBefore = (m.mode === "edit" || m.mode === "upscale") && m.refs && m.refs.length;
+  setBefore(hasBefore ? `/ref/${encodeURIComponent(m.refs[0])}` : null, "before", "after");
+  $("#lbKeep").classList.toggle("hidden", kind !== "private");
+  $("#lbDel").textContent = kind === "private" ? "Discard" : "Delete";
+  $("#lbUp2").parentElement.classList.toggle("hidden", !S.upscaleOk);
+  $("#lbReuse").classList.toggle("hidden", m.mode === "upscale"); $("#lbVary").classList.toggle("hidden", m.mode === "upscale");
+  show($("#prev")); show($("#next"));
+  renderHistory(kind, name);
+  $("#lb").classList.add("open");
+  renderRun();
+}
+function openCompare(a, b) {
+  const ga = findItem(a), gb = findItem(b); if (!ga || !gb) return;
+  S.lb = null; S.cmp = { a, b };
+  $("#lbImg").src = urlOf(b.kind, b.name);
+  setBefore(urlOf(a.kind, a.name), "A", "B");
+  $("#lbPrompt").textContent = "A · " + (ga.meta.prompt || a.name);
+  $("#lbPrompt2").textContent = "B · " + (gb.meta.prompt || b.name); show($("#lbPrompt2"));
+  const diff = ["width", "height", "seed", "steps", "cfg", "turbo", "fast", "sampler"].filter(k => ga.meta[k] !== gb.meta[k]);
+  $("#lbMeta").innerHTML = diff.map(k => `<dt>${k}</dt><dd>A ${escapeHtml(ga.meta[k] ?? "-")} · B ${escapeHtml(gb.meta[k] ?? "-")}</dd>`).join("") || "<dt>Settings</dt><dd>same</dd>";
+  hide($("#lbBtns")); hide($("#histWrap")); hide($("#prev")); hide($("#next"));
+  $("#lb").classList.add("open");
+}
+function setBefore(src, lb, la) {
+  ["#before", "#handle", "#lblB", "#lblA"].forEach(s => $(s).classList.toggle("hidden", !src));
+  if (src) { $("#lbBefore").src = src; $("#lblB").textContent = lb; $("#lblA").textContent = la; setSplit(50); }
+}
+function closeLb() { $("#lb").classList.remove("open"); S.lb = null; S.cmp = null; }
+function lbItem() { return S.lb && findItem(S.lb); }
+function lbStep(d) {
+  if (!S.lb) return;
+  const list = S.lb.kind === "gallery" ? visibleGallery() : items(S.lb.kind), i = list.findIndex(g => g.name === S.lb.name), n = list[i + d];
+  if (n) openLb(S.lb.kind, n.name);
+}
+function setSplit(p) { $("#before").style.clipPath = `inset(0 ${100 - p}% 0 0)`; $("#handle").style.left = p + "%"; }
+
+// ---------- events ----------
+buildStatic();
+$("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); };
+$("#aspects").onclick = e => { const b = e.target.closest("button"); if (!b) return; if (S.base === "custom") { S.base = 1024; $$("#bases button").forEach(x => x.classList.toggle("on", x.dataset.b === "1024")); } setAspect(b.dataset.a); };
+$("#bases").onclick = e => { const b = e.target.closest("button"); if (!b) return; if (b.dataset.b === "custom") { const [w, h] = outSize(); $("#cw").value = w; $("#ch").value = h; S.base = "custom"; } else S.base = +b.dataset.b; $$("#bases button").forEach(x => x.classList.toggle("on", x === b)); update(); };
+$("#refMax").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.refMax = +b.dataset.v; $$("#refMax button").forEach(x => x.classList.toggle("on", x === b)); update(); };
+$("#turboSched").onclick = e => { const b = e.target.closest("button"); if (b) setSched(b.dataset.v); };
+$("#styleChips").onclick = e => { const b = e.target.closest("button"); if (!b) return; const p = $("#prompt"); p.value = p.value.trim() ? p.value.trim().replace(/[,.]?$/, ", ") + STYLES[b.dataset.s] : STYLES[b.dataset.s]; p.focus(); update(); };
+$("#editChips").onclick = e => { const b = e.target.closest("button"); if (!b) return; const t = EDITS[[...b.parentNode.children].indexOf(b)]; const p = $("#prompt"); p.value = (p.value.trim() ? p.value.trim().replace(/[.]?$/, ". ") : "") + t; p.focus(); p.setSelectionRange(p.value.length, p.value.length); update(); };
+$("#aiChips").onclick = e => { const b = e.target.closest("button"); if (!b) return; $("#prompt").value = b.textContent; $("#prompt").focus(); update(); };
+["turbo", "steps", "cfg", "imgCfg", "batch", "fast", "fastThreshold", "shift", "cw", "ch", "prompt"].forEach(id => $("#" + id).addEventListener("input", update));
+$("#dice").onclick = () => { $("#seed").value = Math.floor(Math.random() * 2 ** 31); S.seedLocked = true; update(); };
+$("#lockSeed").onclick = () => { S.seedLocked = !S.seedLocked; if (!S.seedLocked) $("#seed").value = -1; update(); };
+$("#go").onclick = submit;
+$("#presets").onclick = e => { const b = e.target.closest("button"); if (b) { applyPreset(b.dataset.p); $("#myPresets").value = ""; renderPresets(); } };
+$("#myPresets").onchange = () => { const p = S.library.presets[$("#myPresets").value]; if (p) { restore(p); toast("Preset applied"); } renderPresets(); };
+$("#savePreset").onclick = e => {
+  e.stopPropagation();
+  openPop($("#savePreset"), `<form id="presetForm" style="display:flex;gap:6px;padding:4px"><input type="text" id="presetName" placeholder="Preset name" maxlength="40" required><button class="linkbtn">Save</button></form>`);
+  const f = $("#presetForm"); $("#presetName").focus();
+  f.onsubmit = async ev => {
+    ev.preventDefault(); const name = $("#presetName").value.trim(); if (!name) return;
+    await saveLibrary({ presets: { ...S.library.presets, [name]: snapshot() } }); $("#myPresets").value = name; renderPresets(); hide($("#pop")); toast("Preset saved");
+  };
+};
+$("#delPreset").onclick = async () => {
+  const n = $("#myPresets").value; if (!n || !confirm(`Delete preset "${n}"?`)) return;
+  const p = { ...S.library.presets }; delete p[n]; await saveLibrary({ presets: p }); $("#myPresets").value = ""; renderPresets();
+};
+$("#favBtn").onclick = () => {
+  const p = $("#prompt").value.trim(); if (!p) return toast("Write a prompt first");
+  const favs = S.library.favorites.includes(p) ? S.library.favorites.filter(x => x !== p) : [p, ...S.library.favorites];
+  saveLibrary({ favorites: favs }).then(() => toast(favs.includes(p) ? "Saved to favorites" : "Removed from favorites"));
+};
+$("#histBtn").onclick = e => { e.stopPropagation(); $("#pop").classList.contains("hidden") ? openHistory() : hide($("#pop")); };
+document.addEventListener("click", e => { if (!e.target.closest("#pop") && !e.target.closest("#histBtn") && !e.target.closest("#savePreset")) hide($("#pop")); });
+$("#suggestBtn").onclick = () => assist("suggest");
+$("#describeBtn").onclick = () => assist("describe");
+$("#privBtn").onclick = () => setPrivate(!S.private);
+$("#notify").checked = pref("notify") === "1";
+$("#notify").onchange = async () => {
+  if ($("#notify").checked && "Notification" in window && Notification.permission !== "granted") {
+    const p = await Notification.requestPermission();
+    if (p !== "granted") { $("#notify").checked = false; toast("Notifications are blocked for this page"); }
+  }
+  pref("notify", $("#notify").checked ? "1" : "0");
+};
+$("#idleMin").onchange = () => post("/api/settings", { idle_minutes: +$("#idleMin").value }).then(() => toast("Saved"));
+$("#unload").onclick = () => post("/api/engine/stop").then(() => { toast("Engine unloaded"); poll(); });
+$("#pauseQ").onclick = () => post("/api/queue/pause", { paused: !S.paused }).then(poll);
+$("#clearQ").onclick = () => post("/api/clear").then(poll);
+$("#queue").onclick = e => {
+  const c = e.target.closest("[data-cancel]"); if (c) return cancelJob(c.dataset.cancel);
+  const m = e.target.closest("[data-move]"); if (m) post(`/api/jobs/${m.dataset.id}/${m.dataset.move}`).then(poll);
+};
+$("#discardAll").onclick = async () => {
+  if (S.privItems.length && !confirm("Erase all private results?")) return;
+  await post("/api/private/discard", {});
+  if (S.lb && S.lb.kind === "private") closeLb();
+  S.view = null; S.refs = S.refs.filter(r => !r.private); renderRefs(); await loadPrivate(); poll(); toast("Private session erased");
+};
+$("#privGallery").onclick = e => {
+  if (e.target.closest("a")) return;
+  const t = e.target.closest(".tile"); if (!t) return;
+  const name = t.dataset.name, g = S.privItems.find(x => x.name === name), act = e.target.dataset.act;
+  if (act === "edit") useForEdit(g, "private");
+  else if (act === "keep") keepPrivate(name);
+  else if (act === "discard") discardPrivate(name);
+  else openLb("private", name);
+};
+$("#gallery").onclick = e => {
+  const t = e.target.closest(".tile"); if (!t) return;
+  const name = t.dataset.name, g = S.gallery.find(x => x.name === name), act = e.target.dataset.act;
+  if (S.selecting) { S.sel.has(name) ? S.sel.delete(name) : S.sel.add(name); return renderGallery(); }
+  if (act === "edit") useForEdit(g); else if (act === "reuse") reuse(g); else if (act === "delete") deleteImages([name]); else openLb("gallery", name);
+};
+$("#search").oninput = e => { S.filter.q = e.target.value.trim(); renderGallery(); };
+$("#typeFilter").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.filter.type = b.dataset.v; $$("#typeFilter button").forEach(x => x.classList.toggle("on", x === b)); renderGallery(); };
+$("#whenFilter").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.filter.when = b.dataset.v; $$("#whenFilter button").forEach(x => x.classList.toggle("on", x === b)); renderGallery(); };
+$("#selectBtn").onclick = () => setSelecting(true);
+$("#selDone").onclick = () => setSelecting(false);
+$("#selAll").onclick = () => { visibleGallery().forEach(g => S.sel.add(g.name)); renderGallery(); };
+$("#selZip").onclick = () => S.sel.size ? zipDownload([...S.sel]) : toast("Select some images first");
+$("#selCompare").onclick = () => { const [a, b] = [...S.sel]; openCompare({ kind: "gallery", name: a }, { kind: "gallery", name: b }); };
+$("#selDelete").onclick = async () => { if (S.sel.size && await deleteImages([...S.sel])) setSelecting(false); };
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); }
+  if (e.key === "Escape") { closeModal("#maskModal"); closeModal("#cropModal"); hide($("#pop")); }
+  if ($("#lb").classList.contains("open")) {
+    if (e.key === "Escape") closeLb();
+    if (e.key === "ArrowRight") lbStep(1);
+    if (e.key === "ArrowLeft") lbStep(-1);
+  }
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden && document.title.startsWith("✓")) document.title = "Qwen-Image Studio"; });
+$("#drop").onclick = () => $("#file").click();
+$("#file").onchange = e => { uploadFiles(e.target.files); e.target.value = ""; };
+["dragover", "dragenter"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $("#drop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $("#drop").classList.remove("over"); }));
+document.addEventListener("drop", e => { if (e.dataTransfer.files.length) { if (S.mode !== "edit") setMode("edit"); uploadFiles(e.dataTransfer.files); } });
+document.addEventListener("paste", e => { const files = [...e.clipboardData.files]; if (files.length) { if (S.mode !== "edit") setMode("edit"); uploadFiles(files); } });
+$("#refs").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.act === "remove") { S.refs.splice(+b.dataset.i, 1); renderRefs(); }
+  else if (b.dataset.act === "mask") openMask();
+  else if (b.dataset.act === "crop") openCrop(+b.dataset.i);
+};
+// mask editor
+const mc = $("#maskCanvas");
+mc.addEventListener("pointerdown", e => { MK.drawing = true; MK.last = null; mc.setPointerCapture(e.pointerId); maskStroke(e); });
+mc.addEventListener("pointermove", e => MK.drawing && maskStroke(e));
+mc.addEventListener("pointerup", () => { MK.drawing = false; MK.last = null; });
+$("#maskTool").onclick = e => { const b = e.target.closest("button"); if (!b) return; MK.erase = b.dataset.v === "erase"; $$("#maskTool button").forEach(x => x.classList.toggle("on", x === b)); };
+$("#maskClear").onclick = () => MK.ctx.clearRect(0, 0, mc.width, mc.height);
+$("#maskInvert").onclick = () => {
+  const d = MK.ctx.getImageData(0, 0, mc.width, mc.height);
+  for (let i = 0; i < d.data.length; i += 4) { const on = d.data[i + 3] > 20; d.data[i] = 255; d.data[i + 1] = d.data[i + 2] = 70; d.data[i + 3] = on ? 0 : 255; }
+  MK.ctx.putImageData(d, 0, 0);
+};
+$("#maskCancel").onclick = () => closeModal("#maskModal");
+$("#maskDone").onclick = async () => {
+  const png = maskToPng(mc);
+  if (!png) { S.mask = null; renderRefs(); closeModal("#maskModal"); return toast("Mask cleared"); }
+  try {
+    const r = await upload(png, "paint", "mask");
+    S.mask = { name: r.name, forRef: S.refs[0].name, overlay: mc.toDataURL("image/png") };
+    renderRefs(); toast("Mask set. Only the painted area will change.");
+  } catch (e) { toast(e.message); }
+  closeModal("#maskModal");
+};
+// crop editor
+const cc = $("#cropCanvas");
+cc.addEventListener("pointerdown", e => { const [x, y] = cropPoint(e); CR.start = [x, y]; CR.rect = { x, y, w: 0, h: 0 }; cc.setPointerCapture(e.pointerId); });
+cc.addEventListener("pointermove", e => { if (!CR.start) return; const [x, y] = cropPoint(e); CR.rect = { x: Math.min(x, CR.start[0]), y: Math.min(y, CR.start[1]), w: Math.abs(x - CR.start[0]), h: Math.abs(y - CR.start[1]) }; drawRect(); });
+cc.addEventListener("pointerup", () => { CR.start = null; });
+$("#rotL").onclick = () => { CR.rot = (CR.rot + 270) % 360; drawCrop(); };
+$("#rotR").onclick = () => { CR.rot = (CR.rot + 90) % 360; drawCrop(); };
+$("#flipH").onclick = () => { CR.flip = !CR.flip; drawCrop(); };
+$("#cropReset").onclick = () => { CR.rot = 0; CR.flip = false; drawCrop(); };
+$("#cropCancel").onclick = () => closeModal("#cropModal");
+$("#cropDone").onclick = applyCrop;
+// viewer
+$("#lbClose").onclick = closeLb;
+$("#lb").onclick = e => { if (e.target === $("#lb") || e.target.classList.contains("view")) closeLb(); };
+$("#prev").onclick = () => lbStep(-1);
+$("#next").onclick = () => lbStep(1);
+$("#lbEdit").onclick = () => useForEdit(lbItem(), S.lb.kind);
+$("#lbReuse").onclick = () => reuse(lbItem());
+$("#lbVary").onclick = () => reuse(lbItem(), true);
+$("#lbUp2").onclick = () => upscale(S.lb.kind, S.lb.name, 2);
+$("#lbUp4").onclick = () => upscale(S.lb.kind, S.lb.name, 4);
+$("#lbKeep").onclick = () => keepPrivate(S.lb.name);
+$("#lbDel").onclick = () => S.lb.kind === "private" ? discardPrivate(S.lb.name) : deleteImages([S.lb.name]);
+$("#history").onclick = e => { const h = e.target.closest(".h"); if (!h || h.classList.contains("cur")) return; if (h.dataset.kind === "source") return toast("That's the original upload"); openLb(h.dataset.kind, h.dataset.name); };
+let dragging = false;
+$("#cmp").addEventListener("pointerdown", e => { if ($("#handle").classList.contains("hidden")) return; dragging = true; move(e); });
+window.addEventListener("pointermove", e => dragging && move(e));
+window.addEventListener("pointerup", () => dragging = false);
+function move(e) { const r = $("#cmp").getBoundingClientRect(); setSplit(Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100))); }
+
+setMode("edit");
+applyPreset("turbo");
+// Deep links: #edit=<gallery image>&prompt=<text> preloads an edit, #view=<gallery image> opens it
+function applyHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const e = S.gallery.find(g => g.name === h.get("edit"));
+  if (e) { S.refs = [{ name: e.name, width: e.meta.width || 1024, height: e.meta.height || 1024 }]; renderRefs(); setMode("edit"); }
+  if (h.get("prompt")) $("#prompt").value = h.get("prompt");
+  if (h.get("view")) openLb("gallery", h.get("view"));
+}
+Promise.all([loadGallery(), loadPrivate(), api("/api/library").then(l => { S.library = l; renderPresets(); })]).then(async () => { await poll(); applyHash(); renderRun(); update(); });
+</script>
+</body>
+</html>
