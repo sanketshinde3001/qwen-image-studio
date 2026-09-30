@@ -319,9 +319,9 @@ body.private .go { background: #8b5cf6; color: #fff; }
             <div class="label">Negative prompt</div>
             <textarea id="negative" class="small" placeholder="Optional"></textarea>
           </div>
-          <div class="field edit-only hidden" title="Resolution your image is read at. Higher keeps more detail but is slower.">
-            <div class="label">Reference detail <span class="val" id="refMaxVal">768 px</span></div>
-            <div class="seg" id="refMax"><button data-v="512">512</button><button data-v="768" class="on">768</button><button data-v="1024">1024</button></div>
+          <div class="field edit-only hidden" title="Resolution your image is read at. Higher keeps more detail and barely affects speed.">
+            <div class="label">Reference detail <span class="val" id="refMaxVal">1024 px</span></div>
+            <div class="seg" id="refMax"><button data-v="512">512</button><button data-v="768">768</button><button data-v="1024" class="on">1024</button></div>
           </div>
           <div class="field turbo-lock">
             <div class="label">Steps <span class="val" id="stepsVal">16</span></div>
@@ -361,6 +361,10 @@ body.private .go { background: #8b5cf6; color: #fff; }
             <input type="range" id="shift" min="0" max="8" step="0.5" value="0"></div>
           <label class="toggle" title="A desktop notification when a job finishes and this tab is in the background. Private jobs don't show their prompt."><span>Notify when done</span>
             <span class="switch"><input type="checkbox" id="notify"><span></span></span></label>
+          <div class="field" title="Rests between queued jobs so a fanless Mac doesn't throttle. Auto rests only when steps get noticeably slower than your Mac's cool speed.">
+            <div class="label">Cool-down</div>
+            <div class="seg" id="cooldown"><button data-v="auto" class="on">Auto</button><button data-v="off">Off</button><button data-v="30">30 s</button><button data-v="60">60 s</button><button data-v="90">90 s</button></div>
+          </div>
           <div class="field" title="The engine keeps compiled graphs and recent prompts ready between jobs. Weights stay on disk, so it uses about 1 GB while idle.">
             <div class="label">Engine</div>
             <div class="enginerow"><span class="dotw" id="engDot"></span><span id="engTxt">Unloaded</span>
@@ -390,6 +394,11 @@ body.private .go { background: #8b5cf6; color: #fff; }
         <div class="card">
           <h3>Now running</h3>
           <div id="idle" style="color:var(--faint);font-size:13px">Idle</div>
+          <div id="cooling" class="hidden" style="font-size:13px">
+            <div class="stagetxt"><span>Cooling down</span><span id="coolLeft"></span></div>
+            <p id="coolWhy" style="font-size:12.5px;color:var(--muted);margin:6px 0 10px"></p>
+            <button class="linkbtn" id="skipCool">Skip</button>
+          </div>
           <div id="running" class="hidden">
             <div class="stagetxt"><span id="stageName">-</span><span id="stepTxt"></span></div>
             <div class="bar"><i id="barFill"></i></div>
@@ -521,14 +530,14 @@ const STYLES = {
 const EDITS = ["Change the background to ", "Remove the ", "Make it night time with city lights"];
 const ASPECTS = [["1:1",1,1],["4:3",4,3],["3:4",3,4],["16:9",16,9],["9:16",9,16],["3:2",3,2],["2:3",2,3],["match","m","m"]];
 const PRESETS = {
-  turbo:    { base: 768,  refMax: 768,  steps: 4,  fast: false, turbo: true, th: 0.2,  preview: false },
-  draft:    { base: 512,  refMax: 512,  steps: 10, fast: true,  th: 0.25, preview: true },
-  balanced: { base: 768,  refMax: 768,  steps: 16, fast: true,  th: 0.2,  preview: true },
+  turbo:    { base: 768,  refMax: 1024, steps: 4,  fast: false, turbo: true, th: 0.2,  preview: false },
+  draft:    { base: 512,  refMax: 1024, steps: 10, fast: true,  th: 0.25, preview: true },
+  balanced: { base: 768,  refMax: 1024, steps: 16, fast: true,  th: 0.2,  preview: true },
   quality:  { base: 1024, refMax: 1024, steps: 24, fast: false, th: 0.2,  preview: true },
 };
 
 const S = {
-  mode: "edit", aspect: "match", base: 768, refMax: 768, refs: [], mask: null, turboSched: "matched",
+  mode: "edit", aspect: "match", base: 768, refMax: 1024, refs: [], mask: null, turboSched: "matched",
   private: false, turboOk: true, calib: {}, jobs: [], gallery: [], privItems: [], polled: false,
   lb: null, view: null, cmp: null, seedLocked: false, preset: "turbo",
   filter: { q: "", type: "all", when: "any" }, selecting: false, sel: new Set(),
@@ -613,12 +622,13 @@ function outSize() {
 }
 function refSizes() { return S.refs.map(r => { const s = Math.min(1, S.refMax / Math.max(r.width, r.height)); return [r.width * s, r.height * s]; }); }
 function estimate() {
-  const [w, h] = outSize();
-  let mp = w * h / 1048576;
-  if (S.mode === "edit") refSizes().forEach(([a, b]) => mp += a * b / 1048576);
+  // step time follows the output size; the reference is read once on the first step (see server.work_mp)
+  const [w, h] = outSize(), mp = w * h / 1048576;
+  let memMp = mp;
+  if (S.mode === "edit") refSizes().forEach(([a, b]) => memMp += a * b / 1048576);
   const turbo = $("#turbo").checked;
   const k = S.calib[S.mode + (turbo ? "_turbo" : $("#fast").checked ? "_fast" : "")] || 80;
-  return { secs: k * Math.pow(mp, 1.2) * (turbo ? 4 : +$("#steps").value) + 30, mp };
+  return { secs: k * Math.pow(mp, 1.2) * (turbo ? 4 : +$("#steps").value) + 30 + (S.mode === "edit" ? 20 : 0), mp: memMp };
 }
 function update() {
   const [w, h] = outSize();
@@ -826,13 +836,14 @@ async function poll() {
   clearTimeout(pollTimer);
   try {
     const st = await api("/api/state");
-    S.calib = st.calib; S.paused = st.paused; S.assistOk = st.assistant; S.upscaleOk = st.upscaler;
+    S.calib = st.calib; S.paused = st.paused; S.cooling = st.cooling; S.coolReason = st.cool_reason; S.assistOk = st.assistant; S.upscaleOk = st.upscaler;
     applyPrivateUI(!!st.private_mode);
     if (!st.turbo && S.turboOk) { S.turboOk = false; $("#turbo").checked = false; $("#turboRow").classList.add("locked"); $('#presets [data-p="turbo"]').disabled = true; if (S.preset === "turbo") applyPreset("draft"); }
     if (!$("#sampler").options.length) {
       $("#sampler").innerHTML = st.samplers.map(s => `<option>${s}</option>`).join("");
       $("#scheduler").innerHTML = st.schedulers.map(s => `<option>${s}</option>`).join("");
       $("#idleMin").value = String(st.settings.idle_minutes);
+      $$("#cooldown button").forEach(b => b.classList.toggle("on", b.dataset.v === String(st.settings.cooldown)));
     }
     $("#engDot").classList.toggle("on", st.engine_warm);
     $("#engTxt").textContent = st.engine_warm ? "Warm" : "Unloaded";
@@ -880,7 +891,11 @@ function setStage(src, label, onclick) {
 }
 function renderRun() {
   const j = S.jobs.find(x => x.state === "running" || x.state === "starting");
-  $("#idle").classList.toggle("hidden", !!j);
+  const waiting = S.jobs.some(x => x.state === "queued");
+  const cooling = !j && S.cooling > 0 && waiting;
+  $("#idle").classList.toggle("hidden", !!j || cooling);
+  $("#cooling").classList.toggle("hidden", !cooling);
+  if (cooling) { $("#coolLeft").textContent = fmtDur(S.cooling); $("#coolWhy").textContent = S.coolReason + ". The next job starts after a short rest."; }
   $("#running").classList.toggle("hidden", !j);
   if (j) {
     const elapsed = j.started ? Date.now() / 1000 - j.started : 0;
@@ -1154,6 +1169,12 @@ $("#notify").onchange = async () => {
   pref("notify", $("#notify").checked ? "1" : "0");
 };
 $("#idleMin").onchange = () => post("/api/settings", { idle_minutes: +$("#idleMin").value }).then(() => toast("Saved"));
+$("#cooldown").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  $$("#cooldown button").forEach(x => x.classList.toggle("on", x === b));
+  post("/api/settings", { cooldown: b.dataset.v }).then(() => toast("Saved"));
+};
+$("#skipCool").onclick = () => post("/api/queue/skip-cooldown").then(poll);
 $("#unload").onclick = () => post("/api/engine/stop").then(() => { toast("Engine unloaded"); poll(); });
 $("#pauseQ").onclick = () => post("/api/queue/pause", { paused: !S.paused }).then(poll);
 $("#clearQ").onclick = () => post("/api/clear").then(poll);

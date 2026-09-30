@@ -136,6 +136,7 @@ Why it exists:
 * Queue with progress, speed and time left. Pause, reorder and cancel jobs
 * Optional live preview after every step
 * Time estimates that learn from real runs on your machine
+* Heat-aware cool-down between queued jobs, so a fanless Mac doesn't throttle
 * Gallery search, filters by type and date, and multi-select to download as a ZIP, compare or delete
 * Prompt history, favorite prompts and your own saved presets
 * Desktop notification when a job finishes in the background
@@ -213,7 +214,7 @@ xattr -dr com.apple.quarantine bin
 
 **Very slow runs or heavy swap.** Close memory-hungry apps such as browsers with many tabs. Sizes above about 1.3 megapixels (output plus reference images) can go past 16 GB, and the studio warns you before you start one.
 
-**Runs get slower over a long session.** That's heat. On this MacBook, Turbo steps took about 16 s when cool and 28 to 30 s after back-to-back runs. Short breaks bring it back.
+**Runs get slower over a long session.** That's heat. A fanless MacBook throttles within about a minute of full load: in one 768 px edit, steps went from 15.6 s to 24 s. The studio's **Cool-down** setting (Auto by default) rests between queued jobs when it sees your Mac running slow. A hard surface or a cooling pad, not charging while generating, and macOS Low Power Mode for long sessions all help too.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -285,7 +286,7 @@ Every step was measured on the same machine. Times are wall-clock and include mo
 
 1. **Baseline: full model, 1024 px, 20 steps, CFG 6.** 27 minutes, about 75 s per step. It fits in memory, but it's too slow to iterate on.
 
-2. **Reference resolution control.** In edit mode the reference image is tokenized and joined to the sequence the DiT attends over. A 1024 px reference nearly doubles the work compared to generation. The studio resizes references to 512, 768 or 1024 px before the run, and never enlarges small ones.
+2. **Reference images are nearly free.** Qwen-Image 2.1 reads the prompt and reference once and caches them as a prefix on the first step, so later steps only work on the output. In an A-B-B-A test at 768 px output, 512, 768 and 1024 px references gave the same step times, and 1024 added about 3 s in total. So the studio reads references at 1024 px by default for the best detail. It never enlarges small images, and output size is what sets the speed.
 
 3. **EasyCache.** stable-diffusion.cpp can skip transformer passes when consecutive steps barely change the output (`--cache-mode easycache`). Combined with 512 px and 10 steps this gives the Draft preset.
 
@@ -296,6 +297,10 @@ Every step was measured on the same machine. Times are wall-clock and include mo
 6. **A warm engine.** Instead of starting `sd-cli` for every job, the studio keeps `sd-server` running with its weights memory-mapped from disk. It skips process start-up, model loading and graph building, and repeated prompts hit its conditioning cache, which saves the 15 to 18 s prompt encoding. Under the same conditions a Turbo edit took 184 to 200 s warm against 220 s cold. It unloads after 10 idle minutes (adjustable). Keeping the weights fully resident was tested first and was slower: it pushed the Mac to 4.3 GB of swap and every step slowed down.
 
 7. **Untiled VAE.** Decoding the final image took 33 s tiled at 768 px and 16 s untiled, with no extra swap. At 1024 px untiled decoding took 31 s and still fit. The studio only tiles above 1.25 megapixels.
+
+8. **Heat-aware cool-down.** The studio remembers the fastest per-step speed your Mac has reached in each mode. If a job runs more than 30% slower, it rests before the next queued job, from 60 s up to 3 minutes depending on how hot it got. In testing, 60 s rests didn't stop the slowdown, while after 3 minutes a 768 px edit ran at a steady 15.5 s per step and finished in 95 s instead of 115 s. You can set it to Off, Auto or a fixed 30, 60 or 90 s rest.
+
+9. **A bigger prompt cache.** The warm engine keeps the last 12 prompt and reference encodings instead of 4, so re-running an instruction or trying new seeds skips the 5 to 10 s encoding.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -310,6 +315,8 @@ Apple M5, 16 GB, macOS 26.6, stable-diffusion.cpp `master-929-3f8527a`, Metal ba
 | Edit, Draft | 512 px + 512 ref, 10 steps, EasyCache | 2 min 18 s | 18 s | |
 | Generate, Turbo | 1024 px, 4 steps | 4 min 13 s | 44 s | 10.4 GB |
 | Generate, Turbo | 512 px, 4 steps | 46 s | 6 s | |
+| Generate, Turbo, warm engine | 768 px portrait, cool Mac | 1 min 22 s | 14 s | |
+| Edit, Turbo, warm engine | 768 px, after a 3 min cool-down | 1 min 35 s | 15.5 s | |
 | Edit, Turbo, cold | 768 px + 768 ref | 2 min 31 s | 16 s | 12.0 GB |
 | Edit, Turbo, warm engine, masked | 768 px + 768 ref, includes engine start | 1 min 49 s | 16 s | |
 | Upscale 2× | 768 → 1536 px, Real-ESRGAN | 2 min 55 s | | |

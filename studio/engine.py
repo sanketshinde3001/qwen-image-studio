@@ -179,7 +179,9 @@ class WarmEngine:
                    "--diffusion-model", DIFFUSION, "--llm", LLM, "--llm_vision", VISION, "--vae", VAE,
                    "--lora-model-dir", LORAS, "--diffusion-fa",
                    "--model-args", "qwen_image_2_1_prefix_cache_type=q8_0",
-                   "--mmap", "--params-backend", "disk", "--disable-image-metadata"]
+                   "--mmap", "--params-backend", "disk", "--disable-image-metadata",
+                   # remember more recent prompts so re-runs and variations skip the 5-10 s encoding
+                   "--conditioning-cache-size", "12"]
             self.proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                          start_new_session=True)
             threading.Thread(target=pump, args=(self.proc.stdout, self._on_line), daemon=True).start()

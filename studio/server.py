@@ -132,7 +132,7 @@ def sidecar_of(name):
 
 DEFAULT_CALIB = {
     # wall-clock seconds per step per MP^1.2 on an M5 / 16 GB (see README benchmarks)
-    "gen": 79.0, "edit": 87.0, "gen_fast": 24.0, "edit_fast": 25.0, "gen_turbo": 50.0, "edit_turbo": 26.0,
+    "gen": 79.0, "edit": 80.0, "gen_fast": 24.0, "edit_fast": 40.0, "gen_turbo": 26.0, "edit_turbo": 22.0,
     "upscale": 355.0,  # seconds per input MP for ESRGAN x4
 }
 
@@ -144,11 +144,13 @@ def load_calib():
 
 
 def work_mp(job):
-    """Megapixels the transformer attends over: output plus reference images."""
-    mp = job["width"] * job["height"] / 1048576.0
-    for r in job.get("ref_sizes", []):
-        mp += r[0] * r[1] / 1048576.0
-    return mp
+    """Output megapixels. Qwen-Image 2.1 caches the prompt and reference as a prefix on the first
+    step, so later steps only work on the output. Measured: a 512, 768 or 1024 px reference gave the
+    same step times at 768 px output."""
+    return job["width"] * job["height"] / 1048576.0
+
+
+EDIT_OVERHEAD = 20  # seconds: reading the reference on the first step of an edit
 
 
 def calib_key(job):
@@ -162,7 +164,8 @@ def estimate_seconds(job):
         return c["upscale"] * job["src_mp"] + 5
     if job["mode"] == "assist":
         return 25
-    return c.get(calib_key(job), 80.0) * (work_mp(job) ** 1.2) * job["steps"] + 30
+    extra = EDIT_OVERHEAD if job["mode"] == "edit" else 0
+    return c.get(calib_key(job), 80.0) * (work_mp(job) ** 1.2) * job["steps"] + 30 + extra
 
 
 def learn_speed(job):
@@ -173,13 +176,15 @@ def learn_speed(job):
     if job["mode"] == "upscale":
         c["upscale"] = round(spent / max(0.05, job["src_mp"]), 1)
     elif job["mode"] in GEN_MODES:
-        c[calib_key(job)] = round(max(1.0, spent - 30) / (job["steps"] * work_mp(job) ** 1.2), 2)
+        extra = EDIT_OVERHEAD if job["mode"] == "edit" else 0
+        c[calib_key(job)] = round(max(1.0, spent - 30 - extra) / (job["steps"] * work_mp(job) ** 1.2), 2)
     write_json(CALIB, c)
 
 
 # ---------------------------------------------------------------- settings and library
 
-SETTINGS_DEFAULT = {"idle_minutes": 10}
+SETTINGS_DEFAULT = {"idle_minutes": 10, "cooldown": "auto"}
+COOLDOWN_CHOICES = ("auto", "off", "30", "60", "90")
 
 
 def load_settings():
@@ -206,6 +211,41 @@ WAKE = threading.Event()
 QUEUE = {"paused": False}
 # Private mode lives on the server so a page reload or a second tab can't silently turn it off.
 PRIVATE_MODE = {"on": False}
+# A fanless Mac throttles hard under back-to-back runs. Resting between queued jobs keeps it cooler
+# and costs little time, since a throttled step can take twice as long anyway.
+COOL = {"until": 0.0, "reason": ""}
+
+
+def throttle_ratio(job):
+    """How much slower this job's steps were than the fastest this Mac has done in the same mode."""
+    spi = job.get("sec_per_it")
+    if not spi or job["mode"] not in GEN_MODES or (job.get("total") or 0) < 3:
+        return None
+    norm = spi / (work_mp(job) ** 1.2)
+    key = "cool_" + calib_key(job)
+    c = read_json(CALIB, {})
+    best = c.get(key)
+    if (best is None or norm < best) and not job.get("private"):
+        c[key] = round(norm, 3)
+        write_json(CALIB, c)
+    return norm / best if best else 1.0
+
+
+def plan_cooldown(job):
+    mode = load_settings().get("cooldown", "auto")
+    if mode == "off":
+        return
+    spent = job["finished"] - job["started"]
+    if mode == "auto":
+        r = throttle_ratio(job)
+        if not r or r < 1.3:
+            return
+        # measured: 60 s rests didn't stop the slowdown, 3 minutes brought steps back to cool speed
+        rest = min(180, max(60, 2 * spent * (r - 1)))
+        reason = "Steps ran %d%% slower than when cool" % round((r - 1) * 100)
+    else:
+        rest, reason = int(mode), "Rest between jobs"
+    COOL.update(until=time.time() + rest, reason=reason)
 
 PUBLIC_KEYS = ("id", "mode", "state", "prompt", "width", "height", "steps", "seed", "step", "total",
                "sec_per_it", "stage", "created", "started", "finished", "eta", "estimate", "output",
@@ -406,6 +446,9 @@ def finish(job, name, meta):
 def worker():
     while True:
         WAKE.wait()
+        if COOL["until"] > time.time() and not QUEUE["paused"]:
+            time.sleep(1)  # cooling down; the next queued job waits
+            continue
         with LOCK:
             nxt = None if QUEUE["paused"] else next((JOBS[i] for i in ORDER if JOBS[i]["state"] == "queued"), None)
             if nxt is None:
@@ -414,6 +457,8 @@ def worker():
             nxt["state"] = "starting"
         try:
             {"upscale": run_upscale_job, "assist": run_assist_job}.get(nxt["mode"], run_image_job)(nxt)
+            if nxt["state"] == "done" and nxt["mode"] != "assist":
+                plan_cooldown(nxt)
         except Cancelled:
             nxt.update(state="cancelled", stage="Cancelled")
         except Exception as e:  # keep the worker alive
@@ -470,7 +515,7 @@ def submit(spec):
             flow_shift=spec.get("flow_shift") and float(spec["flow_shift"]),
             fast=bool(spec.get("fast")), fast_threshold=float(spec.get("fast_threshold", 0.2)),
             preview=bool(spec.get("preview")), refs=refs, mask=mask,
-            ref_max=int(spec.get("ref_max", 768)), turbo=turbo,
+            ref_max=int(spec.get("ref_max", 1024)), turbo=turbo,
             turbo_schedule="trained" if spec.get("turbo_schedule") == "trained" else "matched")
         if turbo:
             job.update(steps=4, cfg=1.0, img_cfg=None, negative="", sampler="euler", scheduler="default",
@@ -691,6 +736,7 @@ class Handler(BaseHTTPRequestHandler):
                     jobs = [public(JOBS[i]) for i in ORDER[-60:]]
                 return self.send_json({
                     "jobs": jobs, "calib": load_calib(), "paused": QUEUE["paused"],
+                    "cooling": max(0, round(COOL["until"] - time.time())), "cool_reason": COOL["reason"],
                     "private_mode": PRIVATE_MODE["on"], "engine_warm": ENGINE.running,
                     "turbo": engine.turbo_available(), "upscaler": engine.upscaler_available(),
                     "assistant": bool(engine.llama_cli()), "settings": load_settings(),
@@ -730,6 +776,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/private/discard":
                 discard_private(b.get("name"))
                 return self.send_json({"ok": True})
+            if path == "/api/queue/skip-cooldown":
+                COOL["until"] = 0
+                WAKE.set()
+                return self.send_json({"ok": True})
             if path == "/api/queue/pause":
                 QUEUE["paused"] = bool(b.get("paused"))
                 WAKE.set()
@@ -741,6 +791,8 @@ class Handler(BaseHTTPRequestHandler):
                 s = load_settings()
                 if "idle_minutes" in b:
                     s["idle_minutes"] = max(1, min(120, int(b["idle_minutes"])))
+                if b.get("cooldown") in COOLDOWN_CHOICES:
+                    s["cooldown"] = b["cooldown"]
                 write_json(SETTINGS, s)
                 apply_settings(s)
                 return self.send_json(s)
