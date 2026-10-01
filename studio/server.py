@@ -484,48 +484,64 @@ def enqueue(jobs):
     return [j["id"] for j in jobs]
 
 
+MAX_PROMPTS, MAX_JOBS = 50, 100
+
+
+def split_prompts(text):
+    """Bulk text: prompts separated by one or more empty lines. Line breaks inside a prompt become spaces."""
+    blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n"))
+    return [" ".join(l.strip() for l in b.splitlines() if l.strip()) for b in blocks if b.strip()]
+
+
 def submit(spec):
     mode = spec.get("mode", "gen")
     if mode in ("upscale", "assist"):
         return submit_tool(mode, spec)
     if mode not in GEN_MODES:
         raise ValueError("Unknown mode")
-    prompt = (spec.get("prompt") or "").strip()
-    if not prompt:
+    text = (spec.get("prompt") or "").strip()
+    prompts = split_prompts(text) if spec.get("bulk") else ([text] if text else [])
+    if not prompts:
         raise ValueError("Prompt is required")
+    if len(prompts) > MAX_PROMPTS:
+        raise ValueError("Up to %d prompts at once" % MAX_PROMPTS)
+    batch = max(1, min(8, int(spec.get("batch", 1))))
+    if len(prompts) * batch > MAX_JOBS:
+        raise ValueError("Up to %d images at once (prompts x variations)" % MAX_JOBS)
     refs = [safe_name(r) for r in spec.get("refs", [])][:3]
     if mode == "edit" and not refs:
         raise ValueError("Add at least one image to edit")
     mask = safe_name(spec["mask"]) if spec.get("mask") and mode == "edit" else None
-    seed = int(spec.get("seed", -1))
-    if seed < 0:
-        seed = random.randint(0, 2**31 - 1)
+    seed_in = int(spec.get("seed", -1))  # a fixed seed is shared by every prompt, so prompts compare fairly
     turbo = bool(spec.get("turbo")) and engine.turbo_available()
     # anything made from a private image stays private
     private = PRIVATE_MODE["on"] or bool(spec.get("private")) or any(is_private_file(r) for r in refs + [mask])
+    ref_max = int(spec.get("ref_max", 1024))
+    sizes = []
+    for r in refs:
+        w, h = image_size(ref_path(r))
+        s = min(1.0, ref_max / float(max(w, h)))
+        sizes.append((w * s, h * s))
     jobs = []
-    for i in range(max(1, min(8, int(spec.get("batch", 1))))):
-        job = dict(
-            prompt=prompt, negative=(spec.get("negative") or "").strip(),
-            width=snap16(int(spec.get("width", 768))), height=snap16(int(spec.get("height", 768))),
-            steps=max(1, min(100, int(spec.get("steps", 16)))), cfg=float(spec.get("cfg", 6.0)),
-            img_cfg=spec.get("img_cfg") and float(spec["img_cfg"]), seed=seed + i,
-            sampler=spec.get("sampler") if spec.get("sampler") in SAMPLERS else "euler",
-            scheduler=spec.get("scheduler") if spec.get("scheduler") in SCHEDULERS else "default",
-            flow_shift=spec.get("flow_shift") and float(spec["flow_shift"]),
-            fast=bool(spec.get("fast")), fast_threshold=float(spec.get("fast_threshold", 0.2)),
-            preview=bool(spec.get("preview")), refs=refs, mask=mask,
-            ref_max=int(spec.get("ref_max", 1024)), turbo=turbo,
-            turbo_schedule="trained" if spec.get("turbo_schedule") == "trained" else "matched")
-        if turbo:
-            job.update(steps=4, cfg=1.0, img_cfg=None, negative="", sampler="euler", scheduler="default",
-                       flow_shift=None, fast=False)
-        sizes = []
-        for r in refs:
-            w, h = image_size(ref_path(r))
-            s = min(1.0, job["ref_max"] / float(max(w, h)))
-            sizes.append((w * s, h * s))
-        jobs.append(new_job(mode, private, ref_sizes=sizes, **job))
+    for prompt in prompts:
+        seed = seed_in if seed_in >= 0 else random.randint(0, 2**31 - 1)
+        for i in range(batch):
+            job = dict(
+                prompt=prompt, negative=(spec.get("negative") or "").strip(),
+                width=snap16(int(spec.get("width", 768))), height=snap16(int(spec.get("height", 768))),
+                steps=max(1, min(100, int(spec.get("steps", 16)))), cfg=float(spec.get("cfg", 6.0)),
+                img_cfg=spec.get("img_cfg") and float(spec["img_cfg"]), seed=seed + i,
+                sampler=spec.get("sampler") if spec.get("sampler") in SAMPLERS else "euler",
+                scheduler=spec.get("scheduler") if spec.get("scheduler") in SCHEDULERS else "default",
+                flow_shift=spec.get("flow_shift") and float(spec["flow_shift"]),
+                fast=bool(spec.get("fast")), fast_threshold=float(spec.get("fast_threshold", 0.2)),
+                preview=bool(spec.get("preview")), refs=refs, mask=mask,
+                ref_max=ref_max, turbo=turbo,
+                turbo_schedule="trained" if spec.get("turbo_schedule") == "trained" else "matched")
+            if turbo:
+                job.update(steps=4, cfg=1.0, img_cfg=None, negative="", sampler="euler", scheduler="default",
+                           flow_shift=None, fast=False)
+            jobs.append(new_job(mode, private, ref_sizes=sizes, **job))
     return enqueue(jobs)
 
 

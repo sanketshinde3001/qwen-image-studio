@@ -121,6 +121,7 @@ Why it exists:
 **Generation and finishing**
 * Text to image with style shortcuts, negative prompt, 7 aspect ratios and custom sizes up to 2048 px
 * Up to 4 variations per run with consecutive seeds
+* Bulk prompts: paste many prompts or edit instructions at once, separated by an empty line, and each one is queued with the current settings
 * Upscale any result 2× or 4× with Real-ESRGAN
 
 **Speed presets**
@@ -228,6 +229,8 @@ xattr -dr com.apple.quarantine bin
 3. Describe the change. Short, concrete instructions work best, and it helps to say what should stay the same: "Make his cap red. Keep his face and pose unchanged."
 4. Press Edit or ⌘ Enter. Keep working while it runs, since jobs queue up.
 5. When an instruction works, run it again with Quality or press **Upscale** for the final version.
+
+**Bulk prompts.** Press **Bulk** next to the prompt box and paste one prompt per paragraph, with an empty line between them. A prompt can wrap over several lines. The button shows how many images it will queue, and the estimate shows the total time. With a random seed each prompt gets its own seed; with a fixed seed every prompt uses the same one, which makes prompts easy to compare. In the Edit tab, every instruction is applied to the same image. Up to 50 prompts and 100 images at a time.
 
 Deep links are handy for scripting or bookmarking:
 

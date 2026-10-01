@@ -180,6 +180,11 @@ body.private .go { background: #8b5cf6; color: #fff; }
 .labelbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
 .labelbtns button { border: 0; background: none; color: var(--faint); font-size: 13px; padding: 0 3px; }
 .labelbtns button:hover, .labelbtns button.on { color: var(--accent); }
+.labelbtns .bulkbtn { font-size: 11.5px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin-right: 4px; }
+.labelbtns .bulkbtn.on { border-color: var(--accent); }
+textarea.bulk { min-height: 220px; }
+.bulkinfo { font-size: 12px; color: var(--faint); margin-top: -2px; }
+.bulkinfo b { color: var(--text); font-weight: 600; }
 .assist { display: flex; gap: 6px; }
 .assist button { flex: 1; }
 .chips.ai button { border-color: var(--accent); color: var(--text); }
@@ -270,8 +275,9 @@ body.private .go { background: #8b5cf6; color: #fff; }
 
       <div class="field">
         <div class="label"><span id="promptLabel">Prompt</span>
-          <span class="labelbtns"><button id="favBtn" title="Save this prompt to favorites">☆</button><button id="histBtn" title="Recent and favorite prompts">🕘</button></span></div>
+          <span class="labelbtns"><button id="bulkBtn" class="bulkbtn" title="Bulk: queue many prompts at once. Put an empty line between prompts.">Bulk</button><button id="favBtn" title="Save this prompt to favorites">☆</button><button id="histBtn" title="Recent and favorite prompts">🕘</button></span></div>
         <textarea id="prompt"></textarea>
+        <div class="bulkinfo hidden" id="bulkInfo"></div>
         <div class="chips gen-only" id="styleChips"></div>
         <div class="chips edit-only hidden" id="editChips"></div>
       </div>
@@ -603,11 +609,30 @@ function setMode(mode) {
   $$(".edit-only").forEach(el => el.classList.toggle("hidden", mode !== "edit"));
   $$(".gen-only").forEach(el => el.classList.toggle("hidden", mode !== "gen"));
   $("#promptLabel").textContent = mode === "edit" ? "Instruction" : "Prompt";
-  $("#prompt").placeholder = mode === "edit" ? "Describe the change, e.g. make his hat red" : "Describe the image";
-  $("#goLabel").textContent = mode === "edit" ? "Edit" : "Generate";
+  setPlaceholder();
   if (mode === "edit" && S.refs.length && S.aspect !== "match") setAspect("match");
   if (mode === "gen" && S.aspect === "match") setAspect("1:1");
   renderRefs();
+}
+// ---------- bulk prompts ----------
+// Same rule as server.split_prompts: prompts are separated by empty lines, line breaks inside one become spaces.
+function promptList() {
+  const text = $("#prompt").value.trim();
+  if (!S.bulk) return text ? [text] : [];
+  return text.replace(/\r\n/g, "\n").split(/\n\s*\n/).map(b => b.split("\n").map(l => l.trim()).filter(Boolean).join(" ")).filter(Boolean);
+}
+function setPlaceholder() {
+  const edit = S.mode === "edit";
+  $("#prompt").placeholder = S.bulk
+    ? (edit ? "Make his hat red\n\nTurn it into a rainy night\n\nOne instruction per paragraph, with an empty line between them."
+            : "A woman with freckles, soft window light\n\nStudio portrait, dark backdrop, rim light\n\nOne prompt per paragraph, with an empty line between them.")
+    : (edit ? "Describe the change, e.g. make his hat red" : "Describe the image");
+}
+function setBulk(on) {
+  S.bulk = on; pref("bulk", on ? "1" : "0");
+  $("#bulkBtn").classList.toggle("on", on);
+  $("#prompt").classList.toggle("bulk", on);
+  setPlaceholder(); update();
 }
 function setAspect(a) { S.aspect = a; $$("#aspects button").forEach(b => b.classList.toggle("on", b.dataset.a === a)); update(); }
 function setSched(v) { S.turboSched = v; $$("#turboSched button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); }
@@ -645,8 +670,11 @@ function update() {
   $("#refcount").textContent = `${S.refs.length} / 3`;
   $("#lockSeed").classList.toggle("on", S.seedLocked);
   syncPreset();
-  const { secs, mp } = estimate(), n = +$("#batch").value;
-  $("#est").textContent = "≈ " + fmtDur(secs) + (n > 1 ? ` × ${n}` : "");
+  const { secs, mp } = estimate(), n = +$("#batch").value, count = S.bulk ? promptList().length : 1, total = Math.max(1, count) * n;
+  $("#est").textContent = total > 1 ? `≈ ${fmtDur(secs)} each · ${fmtDur(secs * total)} total` : "≈ " + fmtDur(secs);
+  $("#goLabel").textContent = (S.mode === "edit" ? "Edit" : "Generate") + (total > 1 ? ` ${total}` : "");
+  $("#bulkInfo").classList.toggle("hidden", !S.bulk);
+  if (S.bulk) $("#bulkInfo").innerHTML = count ? `<b>${count}</b> prompt${count > 1 ? "s" : ""}${n > 1 ? ` × ${n} variations` : ""} · each uses the settings below` + (total > 100 ? ` · <span style="color:var(--danger)">max 100 images at once</span>` : count > 50 ? ` · <span style="color:var(--danger)">max 50 prompts at once</span>` : "") : "Put an empty line between prompts";
   $("#memWarn").classList.toggle("hidden", mp <= 1.35);
   $("#drop").classList.toggle("hidden", S.refs.length >= 3);
   $("#assist").classList.toggle("hidden", !S.refs.length || !S.assistOk);
@@ -811,11 +839,11 @@ function openHistory() {
 async function submit() {
   const prompt = $("#prompt").value.trim(), err = $("#formErr");
   hide(err);
-  if (!prompt) { err.textContent = S.mode === "edit" ? "Write what you want to change." : "Write a prompt first."; return show(err); }
+  if (!promptList().length) { err.textContent = S.mode === "edit" ? "Write what you want to change." : "Write a prompt first."; return show(err); }
   if (S.mode === "edit" && !S.refs.length) { err.textContent = "Add an image to edit."; return show(err); }
   const [width, height] = outSize();
   const spec = {
-    mode: S.mode, prompt, negative: $("#negative").value, width, height,
+    mode: S.mode, prompt, bulk: !!S.bulk, negative: $("#negative").value, width, height,
     steps: +$("#steps").value, cfg: +$("#cfg").value, img_cfg: S.mode === "edit" && +$("#imgCfg").value ? +$("#imgCfg").value : null,
     seed: +$("#seed").value, batch: +$("#batch").value, sampler: $("#sampler").value, scheduler: $("#scheduler").value,
     flow_shift: +$("#shift").value || null, fast: $("#fast").checked, fast_threshold: +$("#fastThreshold").value,
@@ -1157,6 +1185,7 @@ $("#favBtn").onclick = () => {
 };
 $("#histBtn").onclick = e => { e.stopPropagation(); $("#pop").classList.contains("hidden") ? openHistory() : hide($("#pop")); };
 document.addEventListener("click", e => { if (!e.target.closest("#pop") && !e.target.closest("#histBtn") && !e.target.closest("#savePreset")) hide($("#pop")); });
+$("#bulkBtn").onclick = () => { setBulk(!S.bulk); $("#prompt").focus(); };
 $("#suggestBtn").onclick = () => assist("suggest");
 $("#describeBtn").onclick = () => assist("describe");
 $("#privBtn").onclick = () => setPrivate(!S.private);
@@ -1289,6 +1318,7 @@ function move(e) { const r = $("#cmp").getBoundingClientRect(); setSplit(Math.ma
 
 setMode("edit");
 applyPreset("turbo");
+setBulk(pref("bulk") === "1");
 // Deep links: #edit=<gallery image>&prompt=<text> preloads an edit, #view=<gallery image> opens it
 function applyHash() {
   const h = new URLSearchParams(location.hash.slice(1));
