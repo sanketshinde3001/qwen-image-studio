@@ -517,3 +517,6 @@ Questions, bugs and benchmark results: [open an issue](https://github.com/sanket
 [stars-url]: https://github.com/sanketshinde3001/qwen-image-studio/stargazers
 [views-shield]: https://hits.sh/github.com/sanketshinde3001/qwen-image-studio.svg?style=for-the-badge&label=views&color=f0a14a
 [views-url]: https://hits.sh/github.com/sanketshinde3001/qwen-image-studio/
+## Support
+
+If Qwen-Image Studio is useful to you, you can [support its development](https://buymeacoffee.com/sanketshinde).
