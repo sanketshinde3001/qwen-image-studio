@@ -20,6 +20,15 @@ if [ ! -x bin/sd-cli ]; then
   (cd bin && unzip -oq sd.zip && rm sd.zip)
 fi
 
+# cloudflared opens the Share link (Cloudflare Quick Tunnel, no account needed)
+CF_URL=https://github.com/cloudflare/cloudflared/releases/download/2026.10.1/cloudflared-darwin-arm64.tgz
+CF_SHA=647615df99d49cd179ea5e13ef760b9bbfb33630f6ae62f87e33dfadda60adcc
+if [ ! -x bin/cloudflared ]; then
+  curl -L --fail -o bin/cloudflared.tgz "$CF_URL"
+  echo "$CF_SHA  bin/cloudflared.tgz" | shasum -a 256 -c -
+  tar -xzf bin/cloudflared.tgz -C bin cloudflared && rm bin/cloudflared.tgz
+fi
+
 # llama.cpp runs Qwen3-VL for "Describe" and "Suggest edits"
 if [ ! -x bin/llama/llama-b11249/llama-mtmd-cli ]; then
   curl -L --fail -o bin/llama.tar.gz "$LLAMA_URL"
