@@ -59,6 +59,7 @@
     <li>
       <a href="#usage">Usage</a>
       <ul>
+        <li><a href="#use-it-from-your-phone">Use it from your phone</a></li>
         <li><a href="#command-line">Command line</a></li>
       </ul>
     </li>
@@ -141,6 +142,7 @@ Why it exists:
 * Gallery search, filters by type and date, and multi-select to download as a ZIP, compare or delete
 * Prompt history, favorite prompts and your own saved presets
 * Desktop notification when a job finishes in the background
+* **Share to your phone:** one button opens a key-protected HTTPS link with a QR code. Anonymous mode gives visitors a simple upload, edit and save page that stores nothing on this Mac; Full studio mode gives your own phone the whole studio
 * Complete delete and a Private mode (see [Privacy](#privacy))
 
 ![Viewer with history and before and after][viewer-screenshot]
@@ -203,6 +205,7 @@ What `download.sh` fetches:
 | VAE, bf16 | 0.7 GB | [unsloth/Qwen-Image-2.1-FP8](https://huggingface.co/unsloth/Qwen-Image-2.1-FP8) |
 | Fun-Acc 4-step LoRA | 0.3 GB | [eastmoe/Qwen-Image-2.1-Fun-Acc-LoRAs-Comfy](https://huggingface.co/eastmoe/Qwen-Image-2.1-Fun-Acc-LoRAs-Comfy) |
 | Real-ESRGAN x4plus | 64 MB | [xinntao/Real-ESRGAN][esrgan-url] |
+| `cloudflared` (for the Share link, checksum verified) | 20 MB | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) |
 
 The server only listens on 127.0.0.1, so other devices on your network can't reach it.
 
@@ -231,6 +234,17 @@ xattr -dr com.apple.quarantine bin
 5. When an instruction works, run it again with Quality or press **Upscale** for the final version.
 
 **Bulk prompts.** Press **Bulk** next to the prompt box and paste one prompt per paragraph, with an empty line between them. A prompt can wrap over several lines. The button shows how many images it will queue, and the estimate shows the total time. With a random seed each prompt gets its own seed; with a fixed seed every prompt uses the same one, which makes prompts easy to compare. In the Edit tab, every instruction is applied to the same image. Up to 50 prompts and 100 images at a time.
+
+### Use it from your phone
+
+1. Press **🌐 Share** in the studio header.
+2. Pick a mode:
+   * **Anonymous** for anyone you give the link to. They get a simple page: choose or take a photo (or write a prompt), describe the change, then save the result to their phone. Nothing they upload or make is written to this Mac.
+   * **Full studio** for your own phone. It gets the whole studio, and results are saved here as usual.
+3. Press **Start sharing**. After about 15 seconds you get a link and a QR code. Scan it with the phone camera.
+4. Press **Stop sharing** when you're done. The link stops working right away, and every new share gets a new link.
+
+Every image is still made on this Mac, so it has to stay on with the studio running. The Mac is kept awake while sharing. The link works over any network, including mobile data, through a free [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/), with no account needed. The design is in [docs/remote-access.md](docs/remote-access.md).
 
 Deep links are handy for scripting or bookmarking:
 
@@ -347,6 +361,11 @@ studio/engine.py   everything that touches the GPU
    ├─ ColdRun       bin/sd-cli for live preview and upscaling, bin/llama for the assistant
    ├─ Progress      turns log lines into stage, step, speed and time left
    └─ turbo_sigmas  the size-matched sigma grid
+
+studio/share.py    the Share link
+   ├─ cloudflared   Cloudflare quick tunnel, HOME in studio/tmp, log read from a pipe only
+   ├─ caffeinate    keeps the Mac awake while the tunnel runs
+   └─ listener      a second 127.0.0.1 port that only the tunnel reaches, behind the key gate
 ```
 
 Masked edits send the original as the init image plus a mask and the same image as a reference, at strength 1.0. The model follows the instruction inside the mask, and the latent outside it is kept from the original at every step.
@@ -362,9 +381,12 @@ cleanup.sh         delete everything
 studio/
   server.py        HTTP server, queue, storage
   engine.py        warm engine, cold runs, assistant, sigma grid
+  share.py         Share link: tunnel, key gate, visitor sessions
   index.html       the whole UI
+  anon.html        the phone page for anonymous visitors
+  vendor/          qrcode-generator (MIT) for the Share QR code
 docs/              logo and screenshots
-bin/               sd-cli, sd-server, llama.cpp       (downloaded)
+bin/               sd-cli, sd-server, llama.cpp, cloudflared (downloaded)
 models/            weights, LoRA, upscaler            (downloaded)
 inputs/            uploads and masks                  (created)
 outputs/           results and .json settings         (created)
@@ -375,7 +397,9 @@ logs/              one log per job                    (created)
 
 ### Privacy
 
-* The server listens on 127.0.0.1 only. Nothing is sent anywhere after `download.sh`.
+* The server listens on 127.0.0.1 only. Nothing is sent anywhere after `download.sh`, unless you press Share.
+* **Share** opens a tunnel to a separate local port, never the main one. The link holds a random 256-bit key, which is swapped for a secure cookie on the first visit so it doesn't stay in the address bar. Without it, every page answers "link expired". In Anonymous mode only the phone page and its three API calls are reachable: no gallery, settings or files. Traffic is encrypted, but Cloudflare terminates TLS in between, so it could technically see it.
+* **Anonymous visitors leave nothing behind.** The phone shrinks the photo itself and sends it to the warm engine as base64, the result comes back as base64, and the only copy is held in memory for that visitor's session. As soon as the result reaches their phone, the studio erases it. Anything not picked up is erased after 30 minutes or when sharing stops. There are no logs, settings files, gallery entries or speed data, and your queue shows only "Anonymous remote job", without the prompt or image. In testing, a full anonymous edit left every file in the project unchanged.
 * Generated images don't embed your prompt. stable-diffusion.cpp writes it into PNG metadata by default, and the studio turns that off.
 * **Private mode** keeps results and uploads in `studio/tmp/private/` only. It writes no logs, settings files, gallery entries or speed data, and desktop notifications leave out the prompt. The mode is held by the server, so a page reload can't turn it off, and any edit made from a private image stays private. Everything is erased when you press Discard, when the studio stops, and on the next start in case it crashed. Download or Keep what you want first.
 * **Delete** removes the image, its settings, every log that mentions it, and uploads or masks nothing else uses.
@@ -410,6 +434,7 @@ logs/              one log per job                    (created)
 - [x] Qwen3-VL Suggest edits and Describe
 - [x] Version history and A/B compare
 - [x] Real-ESRGAN upscaling
+- [x] Share to a phone over a key-protected tunnel, with an anonymous mode that stores nothing
 - [ ] Keyboard shortcuts in the gallery and viewer
 - [ ] Phone-friendly layout, with opt-in access from your home network
 - [ ] Batch the same instruction over a folder of images
@@ -467,6 +492,8 @@ Questions, bugs and benchmark results: [open an issue](https://github.com/sanket
 * [Qwen-Image 2.1](https://github.com/QwenLM/Qwen-Image-2.1) by the Qwen team, Alibaba
 * [stable-diffusion.cpp][sdcpp-url] by leejet and contributors, MIT license
 * [llama.cpp][llamacpp-url] by ggml-org and contributors, MIT license
+* [cloudflared](https://github.com/cloudflare/cloudflared) by Cloudflare, Apache 2.0 license
+* [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) by Kazuhiko Arase, MIT license
 * GGUF quantizations by [Unsloth](https://huggingface.co/unsloth)
 * [Qwen-Image-2.1-Fun-Acc](https://huggingface.co/alibaba-pai/Qwen-Image-2.1-Fun-Acc-LoRAs) by Alibaba PAI, with the ComfyUI conversion by [eastmoe](https://huggingface.co/eastmoe/Qwen-Image-2.1-Fun-Acc-LoRAs-Comfy)
 * [Real-ESRGAN][esrgan-url] by Xintao Wang et al., BSD 3-Clause license
