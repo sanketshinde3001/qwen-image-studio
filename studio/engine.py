@@ -4,6 +4,7 @@ the ESRGAN upscaler, and the Qwen3-VL assistant (llama.cpp).
 Only one of these runs at a time. The job queue in server.py makes sure of that.
 """
 import base64
+import collections
 import json
 import math
 import os
@@ -157,6 +158,7 @@ class WarmEngine:
         self.log = None           # open file for the current job's log, or None
         self.last_used = 0.0
         self.idle_seconds = 600
+        self.tail = collections.deque(maxlen=20)   # last log lines, to explain a failed start
         threading.Thread(target=self._idle_watch, daemon=True).start()
 
     @property
@@ -188,7 +190,9 @@ class WarmEngine:
         deadline = time.time() + 120
         while time.time() < deadline:
             if not self.running:
-                raise RuntimeError("The engine exited while starting")
+                why = next((l for l in reversed(self.tail) if "ERROR" in l or "error" in l), None)
+                raise RuntimeError("The engine exited while starting (code %s)%s" % (
+                    self.proc.returncode, ": " + why.split("]", 1)[-1].strip()[:200] if why else ""))
             try:
                 self._get("/sdcpp/v1/capabilities", timeout=2)
                 self.last_used = time.time()
@@ -212,6 +216,7 @@ class WarmEngine:
             self.proc = None
 
     def _on_line(self, line):
+        self.tail.append(line)
         if self.log:
             try:
                 self.log.write((line + "\n").encode())

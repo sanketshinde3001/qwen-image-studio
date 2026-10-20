@@ -6,6 +6,7 @@ Standard library only. Everything it writes stays inside the project folder:
   inputs/          uploaded images and masks (converted to PNG)
   logs/            one log per job
   studio/tmp/      resized references, previews, and private-mode files (wiped on start and exit)
+Anonymous remote jobs (see share.py) write nothing at all: their images live in memory only.
   studio/*.json    calibration, settings, saved presets and favorites
 """
 import base64
@@ -27,6 +28,8 @@ from urllib.parse import unquote, urlparse
 
 import engine
 from engine import ENGINE, Cancelled, ColdRun
+from share import SHARE
+from http.cookies import SimpleCookie
 
 STUDIO = engine.STUDIO
 ROOT = engine.ROOT
@@ -252,7 +255,15 @@ PUBLIC_KEYS = ("id", "mode", "state", "prompt", "width", "height", "steps", "see
                "error", "refs", "has_preview", "private", "turbo", "task", "source", "result", "engine")
 
 
+ANON_PUBLIC_KEYS = ("id", "mode", "state", "width", "height", "steps", "step", "total", "sec_per_it", "stage",
+                    "created", "started", "finished", "eta", "estimate", "error", "engine", "turbo")
+
+
 def public(job):
+    if job.get("anon"):
+        # the owner sees that the GPU is busy, never what an anonymous visitor asked for
+        return dict({k: job.get(k) for k in ANON_PUBLIC_KEYS}, prompt="Anonymous remote job", refs=[],
+                    private=True, anon=True)
     return {k: job.get(k) for k in PUBLIC_KEYS}
 
 
@@ -285,7 +296,7 @@ def engine_body(job):
     body = {
         "prompt": job["prompt"], "width": job["width"], "height": job["height"], "seed": job["seed"],
         "batch_count": 1, "output_format": "png", "embed_image_metadata": False,
-        "ref_images": [data_url(p) for p in job["ref_paths"]],
+        "ref_images": job.get("ref_data") or [data_url(p) for p in job["ref_paths"]],
         "vae_tiling_params": {"enabled": engine.needs_tiling(job["width"], job["height"])},
         "sample_params": {"sample_method": job["sampler"], "sample_steps": job["steps"],
                           "guidance": {"txt_cfg": job["cfg"]}},
@@ -354,6 +365,8 @@ def open_log(job, name):
 
 
 def run_image_job(job):
+    if job.get("anon"):
+        return run_anon_job(job)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     private = job["private"]
     name = "%s_%s_%dx%d_s%d.png" % (stamp, job["mode"], job["width"], job["height"], job["seed"])
@@ -676,7 +689,7 @@ def discard_private(name=None):
         drop_jobs(lambda j: j.get("output") == name)
         return
     wipe_private()
-    drop_jobs(lambda j: j.get("private") and j["state"] not in ("queued", "running", "starting"))
+    drop_jobs(lambda j: j.get("private") and not j.get("anon") and j["state"] not in ("queued", "running", "starting"))
 
 
 def save_upload(data, filename, private=False, kind="image"):
@@ -710,9 +723,113 @@ def zip_of(names):
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------- anonymous remote jobs (memory only)
+
+ANON = {}                       # job id -> {"png": bytes, "session": id, "time": t}
+ANON_TTL = 30 * 60              # results are erased 30 minutes after they finish
+ANON_PER_SESSION = 3            # queued or running jobs per visitor
+ANON_MAX_IMAGE = 15 * 1024 * 1024
+MAX_BODY = 30 * 1024 * 1024
+DATA_URL_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
+
+
+def fit_area(w, h, max_mp=1.1):
+    """Keep the aspect ratio, cap the area, snap to multiples of 16."""
+    w, h = max(64, int(w)), max(64, int(h))
+    scale = min(1.0, (max_mp * 1048576.0 / (w * h)) ** 0.5)
+    return snap16(w * scale), snap16(h * scale)
+
+
+def anon_submit(spec, session):
+    prompt = (spec.get("prompt") or "").strip()[:2000]
+    if not prompt:
+        raise ValueError("Describe the image or the change first")
+    image = spec.get("image") or None
+    if image:
+        if not isinstance(image, str) or len(image) > ANON_MAX_IMAGE * 4 // 3 or not DATA_URL_RE.match(image):
+            raise ValueError("That image can't be used. Try a JPEG or PNG under 15 MB.")
+    with LOCK:
+        mine = sum(1 for j in JOBS.values() if j.get("session") == session and j["state"] in ("queued", "starting", "running"))
+        waiting = sum(1 for j in JOBS.values() if j["state"] == "queued")
+    if mine >= ANON_PER_SESSION:
+        raise ValueError("You already have %d jobs in the queue. Wait for one to finish." % ANON_PER_SESSION)
+    if waiting >= 50:
+        raise ValueError("The studio is busy right now. Try again in a few minutes.")
+    width, height = fit_area(spec.get("width", 768), spec.get("height", 768),
+                             1.1 if spec.get("quality") == "high" else 0.6)
+    turbo = engine.turbo_available()
+    fields = dict(prompt=prompt, negative="", width=width, height=height, seed=random.randint(0, 2**31 - 1),
+                  steps=4 if turbo else 10, cfg=1.0 if turbo else 6.0, img_cfg=None, sampler="euler",
+                  scheduler="default", flow_shift=None, fast=not turbo, fast_threshold=0.25, preview=False,
+                  refs=[], ref_data=[image] if image else [], mask=None, ref_max=1024, turbo=turbo,
+                  turbo_schedule="matched", anon=True, session=session,
+                  ref_sizes=[(int(spec.get("image_width") or width), int(spec.get("image_height") or height))] if image else [])
+    return enqueue([new_job("edit" if image else "gen", True, **fields)])[0]
+
+
+def run_anon_job(job):
+    """Remote anonymous job: the upload and the result stay in memory, nothing touches the disk."""
+    job.update(ref_paths=[], init_path=None, mask_path=None, engine="warm", state="running",
+               started=time.time(), step=0, stage="Starting engine" if not ENGINE.running else "Encoding prompt")
+    try:
+        png = ENGINE.generate(engine_body(job), job, None)
+    finally:
+        job["ref_data"] = []        # drop the upload as soon as the engine has it
+    ANON[job["id"]] = {"png": png, "session": job["session"], "time": time.time()}
+    job.update(state="done", stage="Done", finished=time.time(), eta=0, output=None)
+
+
+def anon_state(session):
+    with LOCK:
+        active = [i for i in ORDER if JOBS[i]["state"] in ("queued", "starting", "running")]
+        mine = [JOBS[i] for i in ORDER if JOBS[i].get("session") == session]
+    out = []
+    for j in mine:
+        ahead = active.index(j["id"]) if j["id"] in active else 0
+        out.append({"id": j["id"], "mode": j["mode"], "state": j["state"], "stage": j.get("stage"),
+                    "step": j.get("step"), "total": j.get("total"), "eta": j.get("eta"), "estimate": j.get("estimate"),
+                    "started": j.get("started"), "finished": j.get("finished"), "error": j.get("error"),
+                    "width": j["width"], "height": j["height"], "ahead": ahead, "result": j["id"] in ANON,
+                    "expires": (ANON[j["id"]]["time"] + ANON_TTL) if j["id"] in ANON else None})
+    return {"jobs": out, "cooling": max(0, round(COOL["until"] - time.time())), "turbo": engine.turbo_available(),
+            "now": time.time()}
+
+
+def anon_owned(job_id, session):
+    job = JOBS.get(job_id)
+    return job if job and job.get("anon") and job.get("session") == session else None
+
+
+def anon_forget(job_id):
+    ANON.pop(job_id, None)
+    drop_jobs(lambda j: j["id"] == job_id)
+
+
+def wipe_anon():
+    """Sharing stopped: cancel every anonymous job and erase every result."""
+    for j in list(JOBS.values()):
+        if j.get("anon") and j["state"] in ("queued", "starting", "running"):
+            cancel(j["id"])
+    ANON.clear()
+    drop_jobs(lambda j: j.get("anon") and j["state"] not in ("starting", "running"))
+
+
+def anon_janitor():
+    while True:
+        time.sleep(30)
+        now = time.time()
+        for job_id, r in list(ANON.items()):
+            if now - r["time"] > ANON_TTL:
+                anon_forget(job_id)
+        drop_jobs(lambda j: j.get("anon") and j["state"] in ("error", "cancelled")
+                  and now - (j.get("finished") or j.get("created") or now) > 600)
+
+
 # ---------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
+    remote = False      # True on the tunnel listener (see RemoteHandler)
+
     def log_message(self, *a):
         pass
 
@@ -734,12 +851,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "not found"}, 404)
         ext = path.rsplit(".", 1)[-1].lower()
         ctype = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
-                 "html": "text/html; charset=utf-8"}.get(ext, "application/octet-stream")
+                 "html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8"}.get(ext, "application/octet-stream")
         with open(path, "rb") as f:
             self.send_bytes(f.read(), ctype)
 
     def body(self):
         n = int(self.headers.get("Content-Length", 0))
+        if n > MAX_BODY:
+            raise ValueError("Upload is too large")
         return json.loads(self.rfile.read(n) or b"{}")
 
     def do_GET(self):
@@ -747,6 +866,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 return self.send_file(os.path.join(STUDIO, "index.html"))
+            if path == "/__health":
+                return self.send_bytes(b"ok", "text/plain")
+            if path == "/vendor/qrcode.js":
+                return self.send_file(os.path.join(STUDIO, "vendor", "qrcode.js"))
             if path == "/api/state":
                 with LOCK:
                     jobs = [public(JOBS[i]) for i in ORDER[-60:]]
@@ -756,7 +879,8 @@ class Handler(BaseHTTPRequestHandler):
                     "private_mode": PRIVATE_MODE["on"], "engine_warm": ENGINE.running,
                     "turbo": engine.turbo_available(), "upscaler": engine.upscaler_available(),
                     "assistant": bool(engine.llama_cli()), "settings": load_settings(),
-                    "samplers": SAMPLERS, "schedulers": SCHEDULERS})
+                    "samplers": SAMPLERS, "schedulers": SCHEDULERS, "remote": self.remote,
+                    "share": None if self.remote else SHARE.state()})
             if path == "/api/gallery":
                 return self.send_json(gallery())
             if path == "/api/private":
@@ -812,6 +936,11 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(SETTINGS, s)
                 apply_settings(s)
                 return self.send_json(s)
+            if path == "/api/share/start":
+                return self.send_json(SHARE.start("full" if b.get("mode") == "full" else "anon", make_remote_listener))
+            if path == "/api/share/stop":
+                SHARE.stop()
+                return self.send_json(SHARE.state())
             if path == "/api/engine/stop":
                 ENGINE.stop()
                 return self.send_json({"ok": True})
@@ -849,14 +978,131 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "not found"}, 404)
 
 
+# ---------------------------------------------------------------- tunnel listener
+
+SECURITY_HEADERS = {"X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+                    "Permissions-Policy": "geolocation=(), microphone=()"}
+EXPIRED_PAGE = (b"<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+                b"<title>Link expired</title><body style='font:16px -apple-system,sans-serif;background:#0f1012;"
+                b"color:#e9e9ea;display:grid;place-items:center;height:90vh;text-align:center'>"
+                b"<div><h2>This link has expired</h2><p style='color:#9a9ca3'>Ask for a new link from the studio.</p></div>")
+
+
+class RemoteHandler(Handler):
+    """Serves the tunnel. Nothing gets through without the share key, and anonymous mode only
+    exposes the anonymous page and its API. Bound to 127.0.0.1, reached only via cloudflared."""
+    remote = True
+
+    def send_bytes(self, body, ctype, code=200, extra=None):
+        super().send_bytes(body, ctype, code, dict(SECURITY_HEADERS, **(extra or {})))
+
+    def cookies(self):
+        c = SimpleCookie()
+        try:
+            c.load(self.headers.get("Cookie", ""))
+        except Exception:
+            return {}
+        return {k: v.value for k, v in c.items()}
+
+    def gate(self):
+        """Returns (path, session) for an allowed request, or None after answering it."""
+        path = unquote(urlparse(self.path).path)
+        if path == "/__health":
+            self.send_bytes(b"ok", "text/plain")
+            return None
+        cookies = self.cookies()
+        m = re.match(r"^/k/([A-Za-z0-9_-]{20,})$", path)
+        if m:
+            if not SHARE.key_ok(m.group(1)):
+                self.send_bytes(EXPIRED_PAGE, "text/html; charset=utf-8", 403)
+                return None
+            # trade the key in the address bar for cookies, so it isn't left in history or screenshots
+            session = cookies.get("qis_s") or uuid.uuid4().hex
+            self.send_response(302)
+            self.send_header("Location", "/")
+            for k, v in (("qis_k", m.group(1)), ("qis_s", session)):
+                self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; Secure; SameSite=Lax" % (k, v))
+            for k, v in SECURITY_HEADERS.items():
+                self.send_header(k, v)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+        if not SHARE.key_ok(cookies.get("qis_k")) or not cookies.get("qis_s"):
+            self.send_bytes(EXPIRED_PAGE, "text/html; charset=utf-8", 403)
+            return None
+        SHARE.touch(cookies["qis_s"])
+        return path, cookies["qis_s"]
+
+    def do_GET(self):
+        g = self.gate()
+        if not g:
+            return
+        path, session = g
+        if SHARE.mode != "anon":
+            if path.startswith("/api/share"):
+                return self.send_json({"error": "not found"}, 404)
+            return super().do_GET()
+        if path in ("/", "/index.html"):
+            return self.send_file(os.path.join(STUDIO, "anon.html"))
+        if path == "/anon/state":
+            return self.send_json(anon_state(session))
+        m = re.match(r"^/anon/result/(\w+)$", path)
+        if m and anon_owned(m.group(1), session) and m.group(1) in ANON:
+            return self.send_bytes(ANON[m.group(1)]["png"], "image/png")
+        self.send_json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        g = self.gate()
+        if not g:
+            return
+        path, session = g
+        if SHARE.mode != "anon":
+            if path.startswith("/api/share"):
+                return self.send_json({"error": "not found"}, 404)
+            return super().do_POST()
+        try:
+            if path == "/anon/jobs":
+                return self.send_json({"id": anon_submit(self.body(), session)})
+            m = re.match(r"^/anon/jobs/(\w+)/(cancel|delete)$", path)
+            if m and anon_owned(m.group(1), session):
+                if m.group(2) == "cancel":
+                    cancel(m.group(1))
+                else:
+                    anon_forget(m.group(1))
+                return self.send_json({"ok": True})
+        except (ValueError, KeyError) as e:
+            return self.send_json({"error": str(e)}, 400)
+        self.send_json({"error": "not found"}, 404)
+
+    def do_DELETE(self):
+        g = self.gate()
+        if not g:
+            return
+        if SHARE.mode != "anon":
+            return super().do_DELETE()
+        self.send_json({"error": "not found"}, 404)
+
+
+def make_remote_listener():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), RemoteHandler)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 7860
     wipe_tmp()
     apply_settings(load_settings())
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=anon_janitor, daemon=True).start()
+    SHARE.on_stop.append(wipe_anon)
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv.daemon_threads = True
 
     def shutdown(*_):
+        SHARE.stop()
         ColdRun.cancel()
         ENGINE.stop()
         wipe_private()
