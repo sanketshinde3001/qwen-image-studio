@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0f1012">
+<title>Qwen-Image Studio</title>
+<style>
+:root {
+  --bg: #0f1012; --panel: #17181b; --panel-2: #1e2024; --line: #2a2d32; --line-2: #363a40;
+  --text: #e9e9ea; --muted: #9a9ca3; --faint: #6b6e75;
+  --accent: #f0a14a; --accent-ink: #1a1206; --accent-soft: rgba(240,161,74,.14);
+  --danger: #ef6b6b; --ok: #6fcf97; --radius: 14px;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f4f3f1; --panel: #fff; --panel-2: #f7f6f4; --line: #e4e2de; --line-2: #d6d3cd;
+          --text: #1b1b1d; --muted: #66686e; --faint: #9b9da3; --accent: #c86f12; --accent-ink: #fff; --accent-soft: rgba(200,111,18,.10); }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+       -webkit-font-smoothing: antialiased; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.wrap { max-width: 560px; margin: 0 auto; padding: 18px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; align-items: center; gap: 10px; }
+header svg { width: 34px; height: 34px; flex: none; }
+header h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+.pill { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--ok); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.note { font-size: 13px; color: var(--muted); margin: -6px 0 0; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button { border: 0; background: transparent; padding: 10px 8px; border-radius: 9px; color: var(--muted); font-weight: 600; font-size: 15px; }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.seg.small button { padding: 7px 6px; font-size: 13.5px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.pick { border: 1.5px dashed var(--line-2); border-radius: 12px; min-height: 150px; display: grid; place-items: center; text-align: center; color: var(--muted);
+        padding: 16px; position: relative; overflow: hidden; }
+.pick b { color: var(--text); display: block; font-size: 16px; margin-bottom: 2px; }
+.pick img { max-width: 100%; max-height: 320px; border-radius: 10px; display: block; }
+.pick.has { border-style: solid; padding: 8px; }
+.pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.pick .swap { position: absolute; right: 14px; bottom: 14px; font-size: 13px; background: rgba(0,0,0,.6); color: #fff; padding: 4px 10px; border-radius: 999px; pointer-events: none; }
+textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; outline: none; font-size: 16px; }
+textarea:focus { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips button { border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 999px; font-size: 13.5px; }
+.go { width: 100%; border: 0; border-radius: 12px; padding: 15px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 17px; }
+.go:disabled { opacity: .55; }
+.err { color: var(--danger); font-size: 14px; }
+.hidden { display: none !important; }
+.job { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.job .body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.job .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; }
+.job .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { height: 6px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .6s; }
+.job img { display: block; width: 100%; height: auto; background: var(--panel-2); }
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.acts button, .acts a { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 10px; padding: 11px; font-size: 15px;
+                        font-weight: 600; text-align: center; text-decoration: none; }
+.acts .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.acts .wide { grid-column: span 2; }
+.acts .danger { color: var(--danger); }
+.small { font-size: 12.5px; color: var(--faint); }
+footer { font-size: 12.5px; color: var(--faint); text-align: center; line-height: 1.6; }
+@keyframes pulse { 50% { opacity: .4; } }
+.pulse { animation: pulse 1.4s infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg viewBox="0 0 160 160" aria-hidden="true"><rect width="160" height="160" rx="36" fill="#1e1a17"/><rect x="30" y="34" width="100" height="92" rx="14" fill="none" stroke="#f0a14a" stroke-width="8"/><circle cx="98" cy="62" r="11" fill="#ffc27a"/><path d="M36 118 L66 82 L86 104 L100 90 L126 118 Z" fill="#f0a14a"/></svg>
+    <h1>Qwen-Image Studio</h1>
+    <span class="pill">🔒 Private session</span>
+  </header>
+  <p class="note">Nothing you upload or make is saved on the studio computer. Each result is sent to this page and then erased from the studio, so save it here.</p>
+
+  <div class="seg" id="tabs"><button data-t="edit" class="on">Edit a photo</button><button data-t="gen">Create</button></div>
+
+  <div class="card">
+    <div id="photoBox">
+      <div class="label" style="margin-bottom:8px">Photo</div>
+      <label class="pick" id="pick">
+        <span id="pickText"><b>Choose or take a photo</b>JPEG, PNG or HEIC</span>
+        <img id="pickImg" class="hidden" alt="">
+        <span class="swap hidden" id="swap">Change</span>
+        <input type="file" id="file" accept="image/*">
+      </label>
+    </div>
+    <div>
+      <div class="label" id="promptLabel" style="margin-bottom:8px">What should change?</div>
+      <textarea id="prompt" placeholder="e.g. Make her jacket red. Keep everything else the same."></textarea>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div id="shapeBox" class="hidden">
+      <div class="label" style="margin-bottom:8px">Shape</div>
+      <div class="seg small" id="shape"><button data-v="1:1" class="on">Square</button><button data-v="3:4">Portrait</button><button data-v="4:3">Landscape</button></div>
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:8px">Quality</div>
+      <div class="seg small" id="quality"><button data-v="fast" class="on">Fast</button><button data-v="high">Detailed</button></div>
+    </div>
+    <div class="err hidden" id="err"></div>
+    <button class="go" id="go">Edit photo</button>
+  </div>
+
+  <div id="jobs" style="display:flex;flex-direction:column;gap:14px"></div>
+
+  <footer>Images are made on the studio owner's Mac and pass through Cloudflare's network on the way.<br>Your photo is processed in the studio's memory only and erased once your result reaches this page.</footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+// results live only in this tab: once a result arrives, the studio is told to erase its copy
+const S = { tab: "edit", quality: "fast", shape: "1:1", photo: null, jobs: [], results: [], blobs: {}, timer: null };
+const CHIPS = {
+  edit: ["Change the background to a beach at sunset", "Make it golden hour lighting", "Turn it into a watercolor painting"],
+  gen: ["Close-up portrait photograph, soft window light, natural skin texture, 85mm lens, photorealistic",
+        "Cozy coffee shop interior on a rainy evening, warm light, photorealistic",
+        "Minimal product photo of a ceramic mug on a stone table, soft studio light"],
+};
+const fmt = s => { s = Math.max(0, Math.round(s)); return s < 60 ? s + " s" : Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s"; };
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.status === 403) { document.body.innerHTML = "<div class='wrap'><h2>This link has expired</h2><p class='note'>Ask for a new link from the studio.</p></div>"; throw new Error("expired"); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Something went wrong");
+  return j;
+}
+
+// ---------- photo: decode and shrink on this device, so the studio never stores the original ----------
+async function loadPhoto(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("That file isn't an image this browser can open.")); i.src = url; });
+    const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
+    return { data: c.toDataURL("image/jpeg", 0.92), width: w, height: h };
+  } finally { URL.revokeObjectURL(url); }
+}
+function showPhoto() {
+  const has = !!S.photo;
+  $("#pickImg").classList.toggle("hidden", !has); $("#pickText").classList.toggle("hidden", has);
+  $("#swap").classList.toggle("hidden", !has); $("#pick").classList.toggle("has", has);
+  if (has) $("#pickImg").src = S.photo.data;
+}
+$("#file").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try { S.photo = await loadPhoto(f); showPhoto(); hide("#err"); } catch (x) { error(x.message); }
+};
+
+// ---------- form ----------
+function setTab(t) {
+  S.tab = t;
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
+  $("#photoBox").classList.toggle("hidden", t !== "edit");
+  $("#shapeBox").classList.toggle("hidden", t !== "gen");
+  $("#promptLabel").textContent = t === "edit" ? "What should change?" : "Describe the image";
+  $("#prompt").placeholder = t === "edit" ? "e.g. Make her jacket red. Keep everything else the same." : "e.g. Close-up portrait of a woman with freckles, soft window light, photorealistic";
+  $("#go").textContent = t === "edit" ? "Edit photo" : "Create image";
+  $("#chips").innerHTML = CHIPS[t].map(c => `<button type="button">${esc(c.length > 34 ? c.slice(0, 32) + "…" : c)}</button>`).join("");
+  $$("#chips button").forEach((b, i) => b.onclick = () => { $("#prompt").value = CHIPS[t][i]; $("#prompt").focus(); });
+}
+const hide = s => $(s).classList.add("hidden");
+function error(m) { $("#err").textContent = m; $("#err").classList.remove("hidden"); }
+$("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setTab(b.dataset.t); };
+for (const id of ["quality", "shape"]) $("#" + id).onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S[id] = b.dataset.v; $$("#" + id + " button").forEach(x => x.classList.toggle("on", x === b));
+};
+
+$("#go").onclick = async () => {
+  hide("#err");
+  const prompt = $("#prompt").value.trim();
+  if (S.tab === "edit" && !S.photo) return error("Choose a photo first.");
+  if (!prompt) return error(S.tab === "edit" ? "Describe the change first." : "Describe the image first.");
+  let width = 1024, height = 1024, body = { prompt, quality: S.quality };
+  if (S.tab === "edit") Object.assign(body, { image: S.photo.data, image_width: S.photo.width, image_height: S.photo.height, width: S.photo.width, height: S.photo.height });
+  else { const [a, b] = S.shape.split(":").map(Number); Object.assign(body, { width: 1024 * Math.sqrt(a / b), height: 1024 * Math.sqrt(b / a) }); }
+  $("#go").disabled = true;
+  try { await api("/anon/jobs", body); await refresh(); window.scrollTo({ top: $("#jobs").offsetTop - 12, behavior: "smooth" }); }
+  catch (x) { if (x.message !== "expired") error(x.message); }
+  finally { $("#go").disabled = false; }
+};
+
+// ---------- jobs ----------
+async function refresh() {
+  clearTimeout(S.timer);
+  try {
+    const st = await api("/anon/state");
+    S.now = st.now; S.cooling = st.cooling;
+    for (const j of st.jobs) if (j.result && !S.blobs[j.id]) {
+      const r = await fetch("/anon/result/" + j.id, { cache: "no-store" });
+      if (!r.ok) continue;
+      S.blobs[j.id] = URL.createObjectURL(await r.blob());
+      S.results.unshift({ id: j.id, mode: j.mode, width: j.width, height: j.height });
+      await api(`/anon/jobs/${j.id}/delete`, {}).catch(() => {});   // the studio forgets it now
+    }
+    S.jobs = st.jobs.filter(j => !S.blobs[j.id]).reverse();
+    render();
+  } catch (x) { if (x.message === "expired") return; }
+  const busy = S.jobs.some(j => ["queued", "starting", "running"].includes(j.state));
+  S.timer = setTimeout(refresh, busy ? 2000 : 15000);
+}
+function progress(j) {
+  if (j.state === "queued") return { label: j.ahead ? `Waiting · ${j.ahead} job${j.ahead > 1 ? "s" : ""} ahead` : (S.cooling ? "Waiting · studio is cooling down" : "Starting soon"), pct: 3, eta: j.estimate ? "about " + fmt(j.estimate) : "" };
+  const elapsed = j.started ? S.now - j.started : 0;
+  const pct = j.total ? (j.step / j.total) * 90 + 5 : Math.min(30, elapsed / Math.max(1, j.estimate || 90) * 100);
+  return { label: j.stage || "Starting", pct, eta: j.eta != null ? fmt(j.eta) + " left" : j.estimate ? "about " + fmt(j.estimate - elapsed) + " left" : "" };
+}
+function render() {
+  const active = S.jobs.map(j => {
+    const kind = j.mode === "edit" ? "Edit" : "New image";
+    if (j.state === "error" || j.state === "cancelled") {
+      return `<div class="job"><div class="body"><div class="row"><span>${kind}</span><span>${j.state === "error" ? "Failed" : "Cancelled"}</span></div>
+        ${j.error ? `<div class="err">${esc(j.error)}</div>` : ""}<div class="acts"><button class="wide" data-act="delete" data-id="${j.id}">Remove</button></div></div></div>`;
+    }
+    const p = progress(j);
+    return `<div class="job"><div class="body">
+      <div class="row"><span class="pulse">${esc(p.label)}</span><span>${esc(p.eta)}</span></div>
+      <div class="bar"><i style="width:${p.pct}%"></i></div>
+      <div class="row"><span class="small">${kind} · ${j.width}×${j.height}</span><button data-act="cancel" data-id="${j.id}" style="border:0;background:none;color:var(--muted);font-size:14px">Cancel</button></div>
+    </div></div>`;
+  });
+  const done = S.results.map(r => `<div class="job"><img src="${S.blobs[r.id]}" alt="Result"><div class="body">
+      <div class="acts">
+        <button class="primary wide" data-act="save" data-id="${r.id}">Save to this device</button>
+        <a href="${S.blobs[r.id]}" download="qwen-image-${r.id}.png">Download</a>
+        <button data-act="again" data-id="${r.id}">Edit again</button>
+        <button class="danger wide" data-act="discard" data-id="${r.id}">Remove from this page</button>
+      </div>
+      <div class="small">${r.mode === "edit" ? "Edit" : "New image"} · ${r.width}×${r.height} · already erased from the studio. Save it before you close this page.</div></div></div>`);
+  $("#jobs").innerHTML = active.join("") + done.join("");
+}
+$("#jobs").onclick = async e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const id = b.dataset.id, act = b.dataset.act;
+  if (act === "save") {
+    const blob = await (await fetch(S.blobs[id])).blob();
+    const file = new File([blob], `qwen-image-${id}.png`, { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); } catch (x) { /* closed the share sheet */ }
+    } else { const a = document.createElement("a"); a.href = S.blobs[id]; a.download = file.name; a.click(); }
+  } else if (act === "again") {
+    S.photo = await loadPhoto(await (await fetch(S.blobs[id])).blob());
+    showPhoto(); setTab("edit"); $("#prompt").value = ""; window.scrollTo({ top: 0, behavior: "smooth" }); $("#prompt").focus();
+  } else if (act === "cancel") {
+    await api(`/anon/jobs/${id}/cancel`, {}).catch(() => {}); refresh();
+  } else if (act === "discard") {
+    URL.revokeObjectURL(S.blobs[id]); delete S.blobs[id];
+    S.results = S.results.filter(r => r.id !== id); render();
+  } else if (act === "delete") {
+    await api(`/anon/jobs/${id}/delete`, {}).catch(() => {});
+    if (S.blobs[id]) { URL.revokeObjectURL(S.blobs[id]); delete S.blobs[id]; }
+    refresh();
+  }
+};
+
+setTab("edit");
+refresh();
+</script>
+</body>
+</html>

@@ -163,6 +163,27 @@ main { min-width: 0; overflow-y: auto; padding: 18px 22px 40px; display: flex; f
 .hidden { display: none !important; }
 .privbtn { margin-left: auto; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; }
 .privbtn.on { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+.brand { flex-wrap: wrap; row-gap: 8px; }
+.sharebtn + .privbtn { margin-left: 0; }
+.sharebtn.live { background: var(--ok); border-color: var(--ok); color: #0b1a10; }
+.sharepanel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; width: min(440px, 92vw); max-height: 90vh; overflow-y: auto;
+              padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.sharepanel h2 { margin: 0; font-size: 17px; }
+.sharepanel p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.sharepanel .opt { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; background: var(--panel-2); text-align: left; }
+.sharepanel .opt b { font-size: 14.5px; }
+.sharepanel .opt span { color: var(--muted); font-size: 13px; }
+.sharepanel .opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.sharepanel .qr { background: #fff; border-radius: 12px; padding: 10px; width: 210px; height: 210px; align-self: center; }
+.sharepanel .qr svg { width: 100%; height: 100%; display: block; }
+.sharepanel .linkrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.sharepanel .linkrow input { font: 12px var(--mono); }
+.sharepanel .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.sharepanel .meta b { color: var(--text); }
+.sharepanel .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sharepanel .row2 .linkbtn, .sharepanel .go { padding: 10px; }
+.spin { width: 18px; height: 18px; border: 2px solid var(--line-2); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; display: inline-block; vertical-align: -4px; margin-right: 8px; }
+@keyframes rot { to { transform: rotate(360deg); } }
 .privnote { border: 1px solid #8b5cf6; background: rgba(139,92,246,.1); border-radius: var(--radius); padding: 9px 11px; font-size: 12.5px; color: var(--text); }
 body.private .go { background: #8b5cf6; color: #fff; }
 .locked { opacity: .45; pointer-events: none; }
@@ -252,7 +273,7 @@ textarea.bulk { min-height: 220px; }
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><h1>Qwen-Image Studio</h1><a class="linkbtn" href="https://buymeacoffee.com/sanketshinde" target="_blank" rel="noopener noreferrer" title="Support Qwen-Image Studio">☕ Support</a><button class="privbtn" id="privBtn" title="Private mode: nothing is saved to disk or logged">🔒 Private</button></div>
+    <div class="brand"><h1>Qwen-Image Studio</h1><a class="linkbtn" href="https://buymeacoffee.com/sanketshinde" target="_blank" rel="noopener noreferrer" title="Support Qwen-Image Studio">☕ Support</a><button class="privbtn sharebtn" id="shareBtn" title="Open this studio from your phone or another device">🌐 Share</button><button class="privbtn" id="privBtn" title="Private mode: nothing is saved to disk or logged">🔒 Private</button></div>
     <div class="controls">
       <div class="seg tabs" id="tabs">
         <button data-mode="edit" class="on">Edit</button>
@@ -509,9 +530,14 @@ textarea.bulk { min-height: 220px; }
   <div class="hint">Drag on the image to crop. Leave it empty to keep the whole image.</div>
 </div>
 
+<div class="modal" id="shareModal">
+  <div class="sharepanel" id="sharePanel"></div>
+</div>
+
 <div class="pop hidden" id="pop"></div>
 <div class="toast" id="toast"></div>
 
+<script src="/vendor/qrcode.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -866,6 +892,14 @@ async function poll() {
     const st = await api("/api/state");
     S.calib = st.calib; S.paused = st.paused; S.cooling = st.cooling; S.coolReason = st.cool_reason; S.assistOk = st.assistant; S.upscaleOk = st.upscaler;
     applyPrivateUI(!!st.private_mode);
+    S.remote = st.remote; S.share = st.share;
+    $("#shareBtn").classList.toggle("hidden", !!st.remote);
+    if (st.share) {
+      const live = st.share.status === "on";
+      $("#shareBtn").classList.toggle("live", live);
+      $("#shareBtn").textContent = live ? `● Sharing${st.share.visitors ? " · " + st.share.visitors : ""}` : "🌐 Share";
+      if ($("#shareModal").classList.contains("open")) renderShare();
+    }
     if (!st.turbo && S.turboOk) { S.turboOk = false; $("#turbo").checked = false; $("#turboRow").classList.add("locked"); $('#presets [data-p="turbo"]').disabled = true; if (S.preset === "turbo") applyPreset("draft"); }
     if (!$("#sampler").options.length) {
       $("#sampler").innerHTML = st.samplers.map(s => `<option>${s}</option>`).join("");
@@ -1043,6 +1077,47 @@ async function upscale(kind, name, scale) {
   catch (e) { toast(e.message); }
 }
 
+// ---------- share ----------
+const SHARE_MODES = {
+  anon: ["Anonymous", "Visitors upload a photo or write a prompt, then save the result on their device. Nothing is stored on this Mac."],
+  full: ["Full studio", "Your whole studio, with gallery and settings. Results are saved here as usual. Only for your own devices."],
+};
+function qrSvg(text) {
+  if (typeof qrcode !== "function") return "";
+  const q = qrcode(0, "M"); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+}
+function renderShare() {
+  const sh = S.share || { status: "off", available: true }, mode = S.shareMode || "anon";
+  const opts = Object.entries(SHARE_MODES).map(([k, [t, d]]) =>
+    `<button class="opt ${k === mode ? "on" : ""}" data-share="pick" data-mode="${k}"><b>${t}</b><span>${d}</span></button>`).join("");
+  let html;
+  if (sh.status === "on") {
+    const [t] = SHARE_MODES[sh.mode];
+    html = `<h2>Sharing is on</h2>
+      <div class="qr">${qrSvg(sh.link)}</div>
+      <p style="text-align:center">Scan with your phone's camera, or send the link.</p>
+      <div class="linkrow"><input type="text" readonly value="${escapeHtml(sh.link)}" onclick="this.select()"><button class="linkbtn" data-share="copy">Copy</button></div>
+      <div class="meta"><span>Mode: <b>${t}</b></span><span>Visitors: <b>${sh.visitors}</b></span></div>
+      <p>Anyone with this link can use the studio until you stop sharing. Each start makes a new link. Traffic is encrypted, and passes through Cloudflare. The Mac stays awake while sharing.</p>
+      <div class="row2"><button class="linkbtn" data-share="switch">Switch to ${SHARE_MODES[sh.mode === "anon" ? "full" : "anon"][0]}</button><button class="linkbtn danger" data-share="stop">Stop sharing</button></div>
+      <button class="linkbtn" data-share="close">Close</button>`;
+  } else if (sh.status === "starting") {
+    html = `<h2>Opening a secure link</h2><p><span class="spin"></span>Connecting to Cloudflare. This takes about 15 seconds.</p>
+      <button class="linkbtn danger" data-share="stop">Cancel</button>`;
+  } else {
+    html = `<h2>Share this studio</h2>
+      <p>Use the studio from your phone or any other device. Every image is still made on this Mac.</p>
+      ${opts}
+      ${sh.status === "error" ? `<div class="err">${escapeHtml(sh.error)}</div>` : ""}
+      ${sh.available === false ? `<div class="err">cloudflared is missing. Run ./download.sh first.</div>` : ""}
+      <button class="go" data-share="start" ${sh.available === false ? "disabled" : ""}>Start sharing</button>
+      <p>Uses a free Cloudflare quick tunnel. No account needed, and the link only works while this studio is running.</p>
+      <button class="linkbtn" data-share="close">Close</button>`;
+  }
+  $("#sharePanel").innerHTML = html;
+}
+
 // ---------- private ----------
 async function loadPrivate() {
   S.privItems = await api("/api/private");
@@ -1189,6 +1264,18 @@ $("#bulkBtn").onclick = () => { setBulk(!S.bulk); $("#prompt").focus(); };
 $("#suggestBtn").onclick = () => assist("suggest");
 $("#describeBtn").onclick = () => assist("describe");
 $("#privBtn").onclick = () => setPrivate(!S.private);
+$("#shareBtn").onclick = () => { renderShare(); $("#shareModal").classList.add("open"); };
+$("#shareModal").onclick = e => { if (e.target === $("#shareModal")) closeModal("#shareModal"); };
+$("#sharePanel").onclick = async e => {
+  const b = e.target.closest("[data-share]"); if (!b) return;
+  const act = b.dataset.share;
+  if (act === "pick") { S.shareMode = b.dataset.mode; return renderShare(); }
+  if (act === "close") return closeModal("#shareModal");
+  if (act === "copy") { navigator.clipboard.writeText(S.share.link).then(() => toast("Link copied")); return; }
+  if (act === "start") { S.share = await post("/api/share/start", { mode: S.shareMode || "anon" }); renderShare(); poll(); }
+  if (act === "switch") { S.share = await post("/api/share/start", { mode: S.share.mode === "anon" ? "full" : "anon" }); renderShare(); poll(); }
+  if (act === "stop") { if (!confirm("Stop sharing? The link stops working and anonymous results are erased.")) return; S.share = await post("/api/share/stop"); renderShare(); poll(); }
+};
 $("#notify").checked = pref("notify") === "1";
 $("#notify").onchange = async () => {
   if ($("#notify").checked && "Notification" in window && Notification.permission !== "granted") {
